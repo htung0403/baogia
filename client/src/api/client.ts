@@ -1,7 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '@/types';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || '/api';
 
 /**
  * Axios instance with auth interceptor
