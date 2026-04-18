@@ -1,6 +1,7 @@
 {
   "name": "crm-baogia-backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "CRM Quotation System - Backend API",
   "main": "dist/index.js",
   "scripts": {
