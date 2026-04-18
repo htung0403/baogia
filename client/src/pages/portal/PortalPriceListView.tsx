@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { priceListApi, trackingApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { PriceListDetail, PriceListItem } from '@/types';
-import { ArrowLeft, Search, Clock, Download, Info } from 'lucide-react';
+import { ArrowLeft, Search, Clock, Download } from 'lucide-react';
 import { useState } from 'react';
 
 export default function PortalPriceListView() {

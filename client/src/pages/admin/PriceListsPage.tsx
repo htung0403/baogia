@@ -55,11 +55,6 @@ export default function PriceListsPage() {
     },
   });
 
-  const statusColors: Record<string, string> = {
-    draft: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
-    published: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
-    archived: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  };
 
   return (
     <div className="space-y-4">
