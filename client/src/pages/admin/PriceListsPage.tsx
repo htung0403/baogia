@@ -15,6 +15,9 @@ import {
   X,
   ArrowUpRight,
   Clock,
+  FilePenLine,
+  Rocket,
+  Archive,
 } from 'lucide-react';
 
 export default function PriceListsPage() {
@@ -84,16 +87,32 @@ export default function PriceListsPage() {
             className="w-full h-10 pl-10 pr-4 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="h-10 px-4 text-[13px] font-medium border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer w-full sm:w-auto min-w-[160px]"
-        >
-          <option value="">Tất cả trạng thái</option>
-          <option value="draft">📁 Nháp</option>
-          <option value="published">🚀 Đã xuất bản</option>
-          <option value="archived">📦 Lưu trữ</option>
-        </select>
+        <div className="flex w-full sm:w-auto items-center gap-1 p-1 border border-slate-200 rounded-lg bg-white">
+          {[
+            { value: '', label: 'Tất cả' },
+            { value: 'draft', label: 'Nháp', icon: FilePenLine },
+            { value: 'published', label: 'Xuất bản', icon: Rocket },
+            { value: 'archived', label: 'Lưu trữ', icon: Archive },
+          ].map((opt) => {
+            const Icon = opt.icon;
+            const active = statusFilter === opt.value;
+            return (
+              <button
+                key={opt.value || 'all'}
+                type="button"
+                onClick={() => { setStatusFilter(opt.value); setPage(1); }}
+                className={`h-8 px-3 text-[12px] font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                {Icon ? <Icon className="w-3.5 h-3.5" /> : null}
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Cards Grid */}

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { paymentApi, customerApi, orderApi, financialApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { CheckCircle2, CreditCard, Plus } from 'lucide-react';
 import type {
   Payment, PaymentMethod, Customer, Order, CustomerFinancial, ApiResponse,
 } from '@/types';
@@ -184,8 +185,9 @@ function RecordPaymentDialog({
             </div>
 
             {currentDebt === 0 && customerId && financial && (
-              <p className="mt-1.5 text-[12px] text-emerald-600">
-                ✓ Khách hàng không có công nợ. Khoản thanh toán sẽ được ghi nhận là credit.
+              <p className="mt-1.5 text-[12px] text-emerald-600 inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Khách hàng không có công nợ. Khoản thanh toán sẽ được ghi nhận là credit.
               </p>
             )}
 
@@ -284,7 +286,8 @@ export default function PaymentsPage() {
           onClick={() => setShowRecord(true)}
           className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
         >
-          + Ghi nhận thanh toán
+          <Plus className="w-4 h-4" />
+          Ghi nhận thanh toán
         </button>
       </div>
 
@@ -308,7 +311,7 @@ export default function PaymentsPage() {
           <div className="py-16 text-center text-[13px] text-muted-foreground">Đang tải...</div>
         ) : payments.length === 0 ? (
           <div className="py-16 text-center text-[13px] text-muted-foreground">
-            <p className="text-3xl mb-3">💳</p>
+            <CreditCard className="w-8 h-8 mx-auto mb-3 text-muted-foreground/60" />
             <p>Chưa có giao dịch thanh toán</p>
           </div>
         ) : (

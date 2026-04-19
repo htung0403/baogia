@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { financialApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { CircleCheckBig, Gift, TriangleAlert, Wallet } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -18,7 +19,7 @@ function KPICard({
   value: string;
   sub?: string;
   color: 'indigo' | 'emerald' | 'red' | 'amber';
-  icon: string;
+  icon: ReactNode;
 }) {
   const colorMap = {
     indigo: 'from-indigo-500/10 to-indigo-500/5 border-indigo-200 text-indigo-600',
@@ -107,27 +108,27 @@ export default function FinancialDashboardPage() {
             value={formatCurrency(kpis.total_revenue)}
             sub="Đơn đã xác nhận"
             color="indigo"
-            icon="💰"
+            icon={<Wallet className="w-5 h-5" />}
           />
           <KPICard
             label="Đã thu về"
             value={formatCurrency(kpis.total_collected)}
             color="emerald"
-            icon="✅"
+            icon={<CircleCheckBig className="w-5 h-5" />}
           />
           <KPICard
             label="Còn nợ"
             value={formatCurrency(kpis.total_outstanding)}
             sub={`${kpis.customers_in_debt} khách hàng`}
             color="red"
-            icon="⚠️"
+            icon={<TriangleAlert className="w-5 h-5" />}
           />
           <KPICard
             label="Credit khách"
             value={formatCurrency(kpis.total_credits)}
             sub="Trả dư"
             color="amber"
-            icon="🎁"
+            icon={<Gift className="w-5 h-5" />}
           />
         </div>
       ) : null}
@@ -201,7 +202,10 @@ export default function FinancialDashboardPage() {
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {b === 'revenue' ? '💰 Doanh thu' : '⚠️ Công nợ'}
+                <span className="inline-flex items-center gap-1.5">
+                  {b === 'revenue' ? <Wallet className="w-3.5 h-3.5" /> : <TriangleAlert className="w-3.5 h-3.5" />}
+                  {b === 'revenue' ? 'Doanh thu' : 'Công nợ'}
+                </span>
               </button>
             ))}
           </div>

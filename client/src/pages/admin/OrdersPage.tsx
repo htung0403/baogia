@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderApi, productApi, customerApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { Check, ClipboardList, Plus, X } from 'lucide-react';
 import type {
   Order, OrderWithDetails, OrderItemInput, OrderPaymentStatus, OrderStatus,
   Product, Customer, ApiResponse,
@@ -96,8 +97,10 @@ function LineItemRow({
       <td className="py-2 pl-2">
         <button
           onClick={() => onRemove(index)}
-          className="text-red-400 hover:text-red-600 text-[13px] transition-colors"
-        >✕</button>
+          className="text-red-400 hover:text-red-600 transition-colors inline-flex items-center justify-center"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
       </td>
     </tr>
   );
@@ -435,9 +438,14 @@ function OrderDetailPanel({ orderId, onClose }: { orderId: string; onClose: () =
                 <button
                   onClick={() => confirmMut.mutate()}
                   disabled={confirmMut.isPending}
-                  className="flex-1 py-2 text-[13px] font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  className="flex-1 py-2 text-[13px] font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-1.5"
                 >
-                  {confirmMut.isPending ? '...' : '✓ Xác nhận'}
+                  {confirmMut.isPending ? '...' : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      Xác nhận
+                    </>
+                  )}
                 </button>
                 <button
                   onClick={() => { if (window.confirm('Hủy đơn hàng này?')) cancelMut.mutate(); }}
@@ -498,7 +506,8 @@ export default function OrdersPage() {
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
         >
-          + Tạo đơn hàng
+          <Plus className="w-4 h-4" />
+          Tạo đơn hàng
         </button>
       </div>
 
@@ -529,7 +538,7 @@ export default function OrdersPage() {
           <div className="py-16 text-center text-[13px] text-muted-foreground">Đang tải...</div>
         ) : orders.length === 0 ? (
           <div className="py-16 text-center text-[13px] text-muted-foreground">
-            <p className="text-3xl mb-3">📋</p>
+            <ClipboardList className="w-8 h-8 mx-auto mb-3 text-muted-foreground/60" />
             <p>Chưa có đơn hàng nào</p>
           </div>
         ) : (
