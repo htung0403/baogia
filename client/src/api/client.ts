@@ -30,7 +30,8 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
     // If 401 and not already retrying, try refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // EXCLUDE login endpoint from redirect logic
+    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes('/auth/login')) {
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('refresh_token');
 
@@ -74,8 +75,8 @@ export default api;
 
 // --- Auth ---
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+  login: (phone_number: string, password: string) =>
+    api.post('/auth/login', { phone_number, password }),
 
   getMe: () =>
     api.get('/auth/me'),
@@ -83,7 +84,7 @@ export const authApi = {
   logout: () =>
     api.post('/auth/logout'),
 
-  register: (data: { email: string; password: string; display_name: string; role: string }) =>
+  register: (data: { phone_number: string; password: string; display_name: string; role: string }) =>
     api.post('/auth/register', data),
 };
 
@@ -115,6 +116,9 @@ export const customerApi = {
 
   get: (id: string) =>
     api.get(`/customers/${id}`),
+
+  getStats: (id: string) =>
+    api.get(`/customers/${id}/stats`),
 
   create: (data: Record<string, unknown>) =>
     api.post('/customers', data),
@@ -212,3 +216,82 @@ export const uploadApi = {
     });
   },
 };
+
+// --- Orders ---
+export const orderApi = {
+  list: (params?: Record<string, string | number | boolean>) =>
+    api.get('/orders', { params }),
+
+  get: (id: string) =>
+    api.get(`/orders/${id}`),
+
+  create: (data: {
+    customer_id: string;
+    order_date?: string;
+    discount_amount?: number;
+    notes?: string | null;
+    items: Array<{
+      product_id: string;
+      product_name: string;
+      product_price_snapshot: number;
+      quantity: number;
+      unit_price: number;
+      notes?: string | null;
+    }>;
+  }) => api.post('/orders', data),
+
+  update: (id: string, data: {
+    discount_amount?: number;
+    notes?: string | null;
+    items: Array<{
+      product_id: string;
+      product_name: string;
+      product_price_snapshot: number;
+      quantity: number;
+      unit_price: number;
+      notes?: string | null;
+    }>;
+  }) => api.put(`/orders/${id}`, data),
+
+  confirm: (id: string) =>
+    api.post(`/orders/${id}/confirm`),
+
+  cancel: (id: string) =>
+    api.post(`/orders/${id}/cancel`),
+
+  delete: (id: string) =>
+    api.delete(`/orders/${id}`),
+};
+
+// --- Payments ---
+export const paymentApi = {
+  list: (params?: Record<string, string | number | boolean>) =>
+    api.get('/payments', { params }),
+
+  record: (data: {
+    customer_id: string;
+    order_id?: string | null;
+    amount: number;
+    payment_method: 'cash' | 'transfer' | 'card' | 'momo';
+    notes?: string | null;
+  }) => api.post('/payments', data),
+
+  getByCustomer: (customerId: string) =>
+    api.get(`/customers/${customerId}/payments`),
+};
+
+// --- Financial Analytics ---
+export const financialApi = {
+  getCustomerSummary: (customerId: string) =>
+    api.get(`/customers/${customerId}/financial-summary`),
+
+  getRevenue: (params?: { period?: 'daily' | 'monthly'; date_from?: string; date_to?: string }) =>
+    api.get('/analytics/revenue', { params }),
+
+  getTopCustomers: (params?: { by?: 'revenue' | 'debt'; limit?: number }) =>
+    api.get('/analytics/top-customers', { params }),
+
+  getKPIs: () =>
+    api.get('/analytics/kpis'),
+};
+

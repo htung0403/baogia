@@ -11,6 +11,9 @@ import customerRoutes from './routes/customer.routes.js';
 import priceListRoutes from './routes/pricelist.routes.js';
 import trackingRoutes from './routes/tracking.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
+import orderRoutes from './routes/order.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
+import financialRoutes from './routes/financial.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/index.js';
 
 const app = express();
@@ -76,6 +79,9 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/price-lists', priceListRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/analytics', financialRoutes);
 
 // ============================================================
 // ERROR HANDLING

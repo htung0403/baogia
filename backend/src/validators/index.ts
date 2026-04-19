@@ -4,12 +4,12 @@ import { z } from 'zod';
 // AUTH
 // ============================================================
 export const loginSchema = z.object({
-  email: z.string().email('Email không hợp lệ'),
+  phone_number: z.string().min(10, 'Số điện thoại không hợp lệ'),
   password: z.string().min(6, 'Mật khẩu ít nhất 6 ký tự'),
 });
 
 export const registerSchema = z.object({
-  email: z.string().email('Email không hợp lệ'),
+  phone_number: z.string().min(10, 'Số điện thoại không hợp lệ'),
   password: z.string().min(6, 'Mật khẩu ít nhất 6 ký tự'),
   display_name: z.string().min(1, 'Tên hiển thị không được trống'),
   role: z.enum(['admin', 'customer', 'staff']).default('customer'),
@@ -37,26 +37,22 @@ export const updateProductSchema = createProductSchema.partial();
 // CUSTOMERS
 // ============================================================
 export const createCustomerSchema = z.object({
-  company_name: z.string().min(1, 'Tên công ty không được trống'),
-  contact_name: z.string().nullable().optional(),
-  contact_email: z.string().email('Email không hợp lệ').nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
+  customer_name: z.string().min(1, 'Tên khách hàng không được trống'),
+  phone_number: z.string().nullable().optional(),
+  email: z.string().email('Email không hợp lệ').nullable().optional(),
   address: z.string().nullable().optional(),
-  tax_code: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   // Optional: create a user account for this customer
   create_account: z.boolean().default(false),
-  account_email: z.string().email().optional(),
+  account_phone: z.string().min(10).optional(),
   account_password: z.string().min(6).optional(),
 });
 
 export const updateCustomerSchema = z.object({
-  company_name: z.string().min(1).optional(),
-  contact_name: z.string().nullable().optional(),
-  contact_email: z.string().email().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
+  customer_name: z.string().min(1).optional(),
+  phone_number: z.string().nullable().optional(),
+  email: z.string().email().nullable().optional(),
   address: z.string().nullable().optional(),
-  tax_code: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -133,3 +129,50 @@ export type CreateVersionInput = z.infer<typeof createVersionSchema>;
 export type AssignCustomersInput = z.infer<typeof assignCustomersSchema>;
 export type StartSessionInput = z.infer<typeof startSessionSchema>;
 export type TrackItemViewInput = z.infer<typeof trackItemViewSchema>;
+
+// ============================================================
+// ORDERS
+// ============================================================
+
+export const orderItemInputSchema = z.object({
+  product_id:              z.string().uuid('Invalid product ID'),
+  product_name:            z.string().min(1, 'Product name required'),
+  product_price_snapshot:  z.number().min(0, 'Price must be >= 0'),
+  quantity:                z.number().int().min(1, 'Quantity must be >= 1'),
+  unit_price:              z.number().min(0, 'Unit price must be >= 0'),
+  notes:                   z.string().nullable().optional(),
+});
+
+export const createOrderSchema = z.object({
+  customer_id:      z.string().uuid('Invalid customer ID'),
+  order_date:       z.string().datetime({ offset: true }).optional(),
+  discount_amount:  z.number().min(0).default(0),
+  notes:            z.string().nullable().optional(),
+  items:            z.array(orderItemInputSchema).min(1, 'At least one item required'),
+});
+
+export const updateOrderSchema = z.object({
+  discount_amount: z.number().min(0).optional(),
+  notes:           z.string().nullable().optional(),
+  items:           z.array(orderItemInputSchema).min(1, 'At least one item required'),
+});
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+export const createPaymentSchema = z.object({
+  customer_id:     z.string().uuid('Invalid customer ID'),
+  order_id:        z.string().uuid().nullable().optional(),
+  amount:          z.number().positive('Amount must be positive'),
+  payment_method:  z.enum(['cash', 'transfer', 'card', 'momo']),
+  notes:           z.string().nullable().optional(),
+});
+
+// ============================================================
+// Type exports (orders + payments)
+// ============================================================
+export type OrderItemInput   = z.infer<typeof orderItemInputSchema>;
+export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
+export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;

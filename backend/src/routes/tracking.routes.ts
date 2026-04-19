@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   startSession,
   endSession,
+  beaconEndSession,
   trackItemView,
   getAnalyticsOverview,
   getCustomerActivity,
@@ -13,7 +14,11 @@ import { authenticate, requireAdminOrStaff } from '../middleware/index.js';
 
 const router = Router();
 
-// All routes require authentication
+// Beacon endpoint — không cần auth (sendBeacon không hỗ trợ custom header)
+// Chỉ kết thúc session theo sessionId, an toàn vì sessionId là UUID ngẫu nhiên
+router.post('/sessions/:sessionId/beacon-end', beaconEndSession);
+
+// All other routes require authentication
 router.use(authenticate);
 
 // Customer tracking endpoints

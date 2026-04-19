@@ -169,7 +169,7 @@ INSERT INTO products (id, sku, name, category_id, description, specs, image_urls
 -- After auth users are created and profiles auto-generated,
 -- run this to create customer records:
 
--- INSERT INTO customers (id, profile_id, company_name, contact_name, contact_email, contact_phone, address, tax_code)
+-- INSERT INTO customers (id, profile_id, customer_name, phone_number, email, address)
 -- VALUES
---     ('c0000000-0000-0000-0000-000000000001', '<profile_id_of_khach1>', 'Công ty TNHH Điện Lực A', 'Nguyễn Văn A', 'khach1@company-a.vn', '0901234567', '123 Nguyễn Huệ, Q.1, TP.HCM', '0301234567'),
---     ('c0000000-0000-0000-0000-000000000002', '<profile_id_of_khach2>', 'Công ty CP Xây Dựng B', 'Trần Thị B', 'khach2@company-b.vn', '0907654321', '456 Lê Lợi, Q.3, TP.HCM', '0307654321');
+--     ('c0000000-0000-0000-0000-000000000001', '<profile_id_of_khach1>', 'Nguyễn Văn A', '0901234567', 'khach1@company-a.vn', '123 Nguyễn Huệ, Q.1, TP.HCM'),
+--     ('c0000000-0000-0000-0000-000000000002', '<profile_id_of_khach2>', 'Trần Thị B', '0907654321', 'khach2@company-b.vn', '456 Lê Lợi, Q.3, TP.HCM');

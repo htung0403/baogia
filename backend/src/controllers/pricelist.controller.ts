@@ -183,7 +183,7 @@ export async function getPriceList(req: Request, res: Response, next: NextFuncti
     // Fetch assigned customers
     const { data: customers } = await supabaseAdmin
       .from('price_list_customers')
-      .select('*, customers(id, company_name, contact_name)')
+      .select('*, customers(id, customer_name, phone_number)')
       .eq('price_list_id', id);
 
     sendSuccess(res, {

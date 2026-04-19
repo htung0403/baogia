@@ -134,7 +134,7 @@ export default function AnalyticsPage() {
                               <Users className="w-3.5 h-3.5" />
                             </div>
                             <span className="font-bold text-slate-900">
-                              {(session.customers as Record<string, string>)?.company_name || `Khách #${(session.customer_id as string)?.slice(0, 5) || 'Ẩn danh'}`}
+                              {(session.customers as Record<string, string>)?.customer_name || `Khách #${(session.customer_id as string)?.slice(0, 5) || 'Ẩn danh'}`}
                             </span>
                           </div>
                         </td>
@@ -248,7 +248,7 @@ export default function AnalyticsPage() {
                           <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100">
                             <Users className="w-4 h-4 text-indigo-600" />
                           </div>
-                          <span className="font-bold text-slate-900">{item.company_name as string}</span>
+                          <span className="font-bold text-slate-900">{item.customer_name as string}</span>
                         </div>
                       </td>
                       <td className="py-4 px-5 text-right tabular-nums">

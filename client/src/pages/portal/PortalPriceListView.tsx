@@ -82,6 +82,26 @@ export default function PortalPriceListView() {
     };
   }, [detail?.id]);
 
+  // Dùng sendBeacon để đảm bảo session được kết thúc khi đóng tab/trình duyệt
+  // (request axios thông thường sẽ bị hủy khi page unload)
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (!sessionIdRef.current) return;
+      const apiBase = (import.meta as any).env?.VITE_API_URL || '/api';
+      const url = `${apiBase}/tracking/sessions/${sessionIdRef.current}/beacon-end`;
+      // sendBeacon gửi request fire-and-forget, không bị hủy khi page unload
+      // Endpoint beacon-end không cần auth header — sessionId UUID là đủ để định danh
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([JSON.stringify({})], { type: 'application/json' }));
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, []);
+
   const handleProductClick = (productId: string) => {
     if (sessionIdRef.current) {
       trackItemMutation.mutate({

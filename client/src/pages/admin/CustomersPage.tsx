@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { customerApi } from '@/api/client';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatPhoneE164 } from '@/lib/utils';
 import type { Customer } from '@/types';
 import {
   Plus,
@@ -12,10 +13,12 @@ import {
   ChevronRight,
   X,
   Building2,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function CustomersPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -73,7 +76,7 @@ export default function CustomersPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Tìm theo tên công ty, email khách hàng..."
+            placeholder="Tìm theo tên khách hàng, số điện thoại..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="w-full h-10 pl-10 pr-4 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
@@ -87,11 +90,10 @@ export default function CustomersPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b bg-slate-50/50">
-                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Công ty</th>
-                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Liên hệ</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Khách hàng</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Số điện thoại</th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Email</th>
-                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">SĐT</th>
-                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Mã số thuế</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Địa chỉ</th>
                 <th className="text-center py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Tài khoản</th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ngày tạo</th>
                 <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24"></th>
@@ -114,25 +116,18 @@ export default function CustomersPage() {
                 </tr>
               ) : (
                 customers.map((customer) => (
-                  <tr key={customer.id} className="hover:bg-slate-50/80 transition-colors group">
+                  <tr key={customer.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => navigate(`/admin/customers/${customer.id}`)}>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0 border border-indigo-100">
                           <Building2 className="w-4.5 h-4.5 text-indigo-600" />
                         </div>
-                        <span className="font-bold text-slate-900">{customer.company_name}</span>
+                        <span className="font-bold text-slate-900">{customer.customer_name}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-slate-600 font-medium">{customer.contact_name || '-'}</td>
-                    <td className="py-4 px-4 text-slate-500">{customer.contact_email || '-'}</td>
-                    <td className="py-4 px-4 text-slate-500 tabular-nums">{customer.contact_phone || '-'}</td>
-                    <td className="py-4 px-4">
-                      {customer.tax_code ? (
-                        <span className="font-mono text-[11px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
-                          {customer.tax_code}
-                        </span>
-                      ) : '-'}
-                    </td>
+                    <td className="py-4 px-4 text-slate-500 tabular-nums">{customer.phone_number || '-'}</td>
+                    <td className="py-4 px-4 text-slate-500">{customer.email || '-'}</td>
+                    <td className="py-4 px-4 text-slate-500">{customer.address || '-'}</td>
                     <td className="py-4 px-4 text-center">
                       {customer.profile_id ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -151,14 +146,21 @@ export default function CustomersPage() {
                     <td className="py-4 px-4 text-right">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => { setEditingCustomer(customer); setShowForm(true); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/admin/customers/${customer.id}`); }}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                          title="Xem chi tiết"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingCustomer(customer); setShowForm(true); }}
                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
                           title="Chỉnh sửa"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(customer.id, customer.company_name)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(customer.id, customer.customer_name); }}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
                           title="Xóa"
                         >
@@ -228,37 +230,43 @@ function CustomerFormModal({
 }) {
   const isEdit = !!customer;
   const [formData, setFormData] = useState({
-    company_name: customer?.company_name ?? '',
-    contact_name: customer?.contact_name ?? '',
-    contact_email: customer?.contact_email ?? '',
-    contact_phone: customer?.contact_phone ?? '',
+    customer_name: customer?.customer_name ?? '',
+    phone_number: customer?.phone_number ?? '',
+    email: customer?.email ?? '',
     address: customer?.address ?? '',
-    tax_code: customer?.tax_code ?? '',
     notes: customer?.notes ?? '',
     create_account: false,
-    account_email: '',
+    account_phone: '',
     account_password: '',
   });
 
   const updateField = (field: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      
+      // Auto-fill logic: If enabling account creation and account_phone is empty, 
+      // take the value from phone_number
+      if (field === 'create_account' && value === true && !next.account_phone) {
+        next.account_phone = prev.phone_number;
+      }
+      
+      return next;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const data: Record<string, unknown> = {
-      company_name: formData.company_name,
-      contact_name: formData.contact_name || null,
-      contact_email: formData.contact_email || null,
-      contact_phone: formData.contact_phone || null,
+      customer_name: formData.customer_name,
+      phone_number: formData.phone_number || null,
+      email: formData.email || null,
       address: formData.address || null,
-      tax_code: formData.tax_code || null,
       notes: formData.notes || null,
     };
 
     if (!isEdit && formData.create_account) {
       data.create_account = true;
-      data.account_email = formData.account_email;
+      data.account_phone = formatPhoneE164(formData.account_phone);
       data.account_password = formData.account_password;
     }
 
@@ -279,11 +287,11 @@ function CustomerFormModal({
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           <div className="space-y-1.5">
-            <label className="text-[13px] font-medium">Tên công ty *</label>
+            <label className="text-[13px] font-medium">Tên khách hàng *</label>
             <input
               type="text"
-              value={formData.company_name}
-              onChange={(e) => updateField('company_name', e.target.value)}
+              value={formData.customer_name}
+              onChange={(e) => updateField('customer_name', e.target.value)}
               required
               className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
             />
@@ -291,41 +299,20 @@ function CustomerFormModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[13px] font-medium">Người liên hệ</label>
-              <input
-                type="text"
-                value={formData.contact_name}
-                onChange={(e) => updateField('contact_name', e.target.value)}
-                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1.5">
               <label className="text-[13px] font-medium">Số điện thoại</label>
               <input
                 type="text"
-                value={formData.contact_phone}
-                onChange={(e) => updateField('contact_phone', e.target.value)}
+                value={formData.phone_number}
+                onChange={(e) => updateField('phone_number', e.target.value)}
                 className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[13px] font-medium">Email</label>
               <input
                 type="email"
-                value={formData.contact_email}
-                onChange={(e) => updateField('contact_email', e.target.value)}
-                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium">Mã số thuế</label>
-              <input
-                type="text"
-                value={formData.tax_code}
-                onChange={(e) => updateField('tax_code', e.target.value)}
+                value={formData.email}
+                onChange={(e) => updateField('email', e.target.value)}
                 className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
@@ -365,17 +352,17 @@ function CustomerFormModal({
               </label>
 
               {formData.create_account && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium text-muted-foreground">Email đăng nhập *</label>
-                    <input
-                      type="email"
-                      value={formData.account_email}
-                      onChange={(e) => updateField('account_email', e.target.value)}
-                      required={formData.create_account}
-                      className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium text-muted-foreground">SĐT đăng nhập *</label>
+                      <input
+                        type="tel"
+                        value={formData.account_phone}
+                        onChange={(e) => updateField('account_phone', e.target.value)}
+                        required={formData.create_account}
+                        className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-medium text-muted-foreground">Mật khẩu *</label>
                     <input

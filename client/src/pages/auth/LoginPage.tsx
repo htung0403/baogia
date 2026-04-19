@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth.store';
 import { ShieldCheck, ArrowRight, Loader2, Building2 } from 'lucide-react';
+import { formatPhoneE164 } from '@/lib/utils';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, isLoading } = useAuthStore();
-  const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
@@ -15,7 +16,8 @@ export default function LoginPage() {
     setError('');
 
     try {
-      await login(email, password);
+      const formattedPhone = formatPhoneE164(phoneNumber);
+      await login(formattedPhone, password);
       const user = useAuthStore.getState().user;
       if (user?.profile.role === 'customer') {
         navigate('/portal');
@@ -52,7 +54,7 @@ export default function LoginPage() {
               Hệ thống quản lý báo giá <span className="text-[#0369A1]">chuyên nghiệp</span>
             </h1>
             <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-              Giải pháp tối ưu cho CÔNG TY TNHH THƯƠNG MẠI ĐIỆN TỬ TLINK trong việc quản lý, theo dõi và phê duyệt báo giá tự động.
+              Giải pháp tối ưu cho công ty trong việc quản lý, theo dõi và phê duyệt báo giá tự động.
             </p>
             
             <div className="space-y-4">
@@ -113,16 +115,16 @@ export default function LoginPage() {
                 )}
 
                 <div className="space-y-2 group">
-                  <label htmlFor="email" className="text-sm font-semibold text-slate-700 flex justify-between">
-                    Email công ty
+                  <label htmlFor="phone" className="text-sm font-semibold text-slate-700 flex justify-between">
+                    Số điện thoại
                   </label>
                   <div className="relative">
                     <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@tlink.vn"
+                      id="phone"
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="09xx xxx xxx"
                       required
                       className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0369A1]/10 focus:border-[#0369A1] transition-all placeholder:text-slate-400"
                     />

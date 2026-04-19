@@ -38,12 +38,10 @@ COMMENT ON COLUMN profiles.role IS 'Extensible: admin, customer, staff (future: 
 CREATE TABLE customers (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     profile_id      UUID UNIQUE REFERENCES profiles(id) ON DELETE SET NULL,
-    company_name    TEXT NOT NULL,
-    contact_name    TEXT,
-    contact_email   TEXT,
-    contact_phone   TEXT,
+    customer_name   TEXT NOT NULL,
+    phone_number    TEXT,
+    email           TEXT,
     address         TEXT,
-    tax_code        TEXT,
     notes           TEXT,
     created_by      UUID REFERENCES profiles(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -52,7 +50,7 @@ CREATE TABLE customers (
 );
 
 CREATE INDEX idx_customers_profile ON customers(profile_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_customers_company ON customers(company_name) WHERE deleted_at IS NULL;
+CREATE INDEX idx_customers_name ON customers(customer_name) WHERE deleted_at IS NULL;
 CREATE INDEX idx_customers_deleted ON customers(deleted_at);
 
 COMMENT ON TABLE customers IS 'Customer companies. Soft-deletable.';
@@ -300,12 +298,13 @@ CREATE TRIGGER tr_price_lists_updated
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO profiles (id, display_name, role)
-    VALUES (
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'display_name', NEW.email),
-        COALESCE(NEW.raw_user_meta_data->>'role', 'customer')
-    );
+    INSERT INTO public.profiles (id, display_name, avatar_url, role)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'phone_number', new.email),
+    new.raw_user_meta_data->>'avatar_url',
+    COALESCE(new.raw_user_meta_data->>'role', 'customer')
+  );
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -489,7 +488,7 @@ WHERE p.deleted_at IS NULL;
 
 -- Active customers
 CREATE OR REPLACE VIEW v_active_customers AS
-SELECT c.*, pr.display_name AS user_display_name, pr.role
+SELECT c.*, pr.display_name AS user_display_name, pr.role, pr.is_active
 FROM customers c
 LEFT JOIN profiles pr ON c.profile_id = pr.id
 WHERE c.deleted_at IS NULL;
@@ -517,14 +516,16 @@ WHERE pl.deleted_at IS NULL
 CREATE OR REPLACE VIEW v_customer_activity AS
 SELECT 
     c.id AS customer_id,
-    c.company_name,
+    c.customer_name,
+    c.phone_number,
+    c.email,
     COUNT(vs.id) AS total_sessions,
     MAX(vs.started_at) AS last_viewed_at,
     COALESCE(SUM(vs.duration_seconds), 0) AS total_duration_seconds
 FROM customers c
 LEFT JOIN view_sessions vs ON vs.customer_id = c.id
 WHERE c.deleted_at IS NULL
-GROUP BY c.id, c.company_name;
+GROUP BY c.id, c.customer_name, c.phone_number, c.email;
 
 -- Most viewed products
 CREATE OR REPLACE VIEW v_product_view_stats AS

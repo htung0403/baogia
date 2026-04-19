@@ -65,24 +65,21 @@ export async function startSession(req: Request, res: Response, next: NextFuncti
       versionId = currentVersion?.id ?? undefined;
     }
 
-    // 4. Create session
-    // Tìm một customer_id mặc định nếu không có (ví dụ cho Admin xem)
-    let finalCustomerId = customerId;
-    if (!finalCustomerId && user.profile.role !== 'customer') {
-      // Nếu là Admin/Staff xem, ta có thể để customer_id là null 
-      // NHƯNG DB đang để NOT NULL, nên ta cần tìm 1 customer thực tế hoặc bypass
-      // Ở đây tôi sẽ log cảnh báo và không throw lỗi để tránh hỏng giao diện
-      console.warn('[TRACKING] Admin viewing without customer profile');
-    }
-
-    if (!finalCustomerId && user.profile.role === 'customer') {
-       throw ApiError.forbidden('Không tìm thấy hồ sơ khách hàng để ghi log');
+    // 4. Create session — chỉ ghi cho khách hàng thực sự (có customer_id hợp lệ)
+    // Admin/Staff không có customer record → bỏ qua, không insert để tránh FK violation
+    if (!customerId) {
+      if (user.profile.role === 'customer') {
+        throw ApiError.forbidden('Không tìm thấy hồ sơ khách hàng để ghi log');
+      }
+      // Admin/Staff xem thử báo giá → không cần ghi session
+      sendCreated(res, { id: null, skipped: true }, 'Admin view – session not recorded');
+      return;
     }
 
     const { data: session, error } = await supabaseAdmin
       .from('view_sessions')
       .insert({
-        customer_id: finalCustomerId || '00000000-0000-0000-0000-000000000000', // Dùng UUID trống nếu là Admin
+        customer_id: customerId,
         price_list_id: input.price_list_id,
         version_id: versionId ?? null,
         device: input.device ?? null,
@@ -104,6 +101,46 @@ export async function startSession(req: Request, res: Response, next: NextFuncti
 }
 
 /**
+ * POST /tracking/sessions/:sessionId/beacon-end
+ * Kết thúc session qua sendBeacon (không cần auth header).
+ * An toàn vì sessionId là UUID ngẫu nhiên — không thể đoán được.
+ */
+export async function beaconEndSession(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { sessionId } = req.params;
+
+    // Fetch session không kiểm tra ownership (đã bypass auth)
+    const { data: session } = await supabaseAdmin
+      .from('view_sessions')
+      .select('id, started_at, ended_at')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    // Nếu không tìm thấy hoặc đã kết thúc → bỏ qua silently
+    if (!session || session.ended_at) {
+      res.status(204).end();
+      return;
+    }
+
+    const endedAt = new Date();
+    const startedAt = new Date(session.started_at);
+    const durationSeconds = Math.round((endedAt.getTime() - startedAt.getTime()) / 1000);
+
+    await supabaseAdmin
+      .from('view_sessions')
+      .update({
+        ended_at: endedAt.toISOString(),
+        duration_seconds: durationSeconds,
+      })
+      .eq('id', sessionId);
+
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * PUT /tracking/sessions/:sessionId/end
  * End a view session (record duration)
  */
@@ -112,23 +149,27 @@ export async function endSession(req: Request, res: Response, next: NextFunction
     const user = (req as AuthenticatedRequest).user;
     const { sessionId } = req.params;
 
-    // Get customer record
+    // Get customer record — dùng maybeSingle để không throw nếu admin không có customer record
     const { data: customer } = await supabaseAdmin
       .from('customers')
       .select('id')
       .eq('profile_id', user.id)
       .is('deleted_at', null)
-      .single();
+      .maybeSingle();
 
-    if (!customer) throw ApiError.forbidden('Không tìm thấy hồ sơ khách hàng');
+    // Admin/Staff không có customer record → session của họ không được ghi → bỏ qua gracefully
+    if (!customer) {
+      sendSuccess(res, null, 'No customer record – session end skipped');
+      return;
+    }
 
-    // Fetch session
+    // Fetch session — dùng maybeSingle để trả về null thay vì throw khi không tìm thấy
     const { data: session } = await supabaseAdmin
       .from('view_sessions')
       .select('*')
       .eq('id', sessionId)
       .eq('customer_id', customer.id)
-      .single();
+      .maybeSingle();
 
     if (!session) throw ApiError.notFound('Session không tồn tại');
 
@@ -149,7 +190,7 @@ export async function endSession(req: Request, res: Response, next: NextFunction
       })
       .eq('id', sessionId)
       .select('*')
-      .single();
+      .maybeSingle();
 
     if (error) throw ApiError.internal(error.message);
 
@@ -231,7 +272,7 @@ export async function getAnalyticsOverview(req: Request, res: Response, next: Ne
         .from('view_sessions')
         .select(`
           id, started_at, duration_seconds, device, price_list_id, customer_id,
-          customers!left(id, company_name, contact_name),
+          customers!left(id, customer_name, phone_number),
           price_lists!left(id, title)
         `)
         .order('started_at', { ascending: false })
@@ -417,7 +458,7 @@ export async function getPriceListViewStats(req: Request, res: Response, next: N
       .from('view_sessions')
       .select(`
         *,
-        customers(id, company_name, contact_name)
+        customers(id, customer_name, phone_number)
       `)
       .eq('price_list_id', priceListId)
       .order('started_at', { ascending: false });

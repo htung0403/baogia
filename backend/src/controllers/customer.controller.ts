@@ -4,6 +4,7 @@ import { ApiError, sendSuccess, sendCreated, parsePagination } from '../utils/in
 import { createCustomerSchema, updateCustomerSchema } from '../validators/index.js';
 import { AuthenticatedRequest } from '../types/api.js';
 import { AuditService } from '../services/audit.service.js';
+import { formatPhoneE164, phoneToEmail } from '../utils/phone.js';
 
 /**
  * GET /customers
@@ -25,7 +26,7 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
 
     if (search) {
       query = query.or(
-        `company_name.ilike.%${search}%,contact_name.ilike.%${search}%,contact_email.ilike.%${search}%`
+        `customer_name.ilike.%${search}%,phone_number.ilike.%${search}%,email.ilike.%${search}%`
       );
     }
 
@@ -90,20 +91,22 @@ export async function createCustomer(req: Request, res: Response, next: NextFunc
     let profileId: string | null = null;
 
     // Optionally create a Supabase Auth account for this customer
-    if (input.create_account && input.account_email && input.account_password) {
+    if (input.create_account && input.account_phone && input.account_password) {
+      const shadowEmail = phoneToEmail(input.account_phone);
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: input.account_email,
+        email: shadowEmail,
         password: input.account_password,
         email_confirm: true,
         user_metadata: {
-          display_name: input.contact_name || input.company_name,
+          display_name: input.customer_name,
           role: 'customer',
+          phone_number: formatPhoneE164(input.account_phone),
         },
       });
 
       if (authError) {
         if (authError.message.includes('already')) {
-          throw ApiError.conflict('Email đã được sử dụng');
+          throw ApiError.conflict('Số điện thoại đã được sử dụng');
         }
         throw ApiError.badRequest(authError.message);
       }
@@ -116,12 +119,10 @@ export async function createCustomer(req: Request, res: Response, next: NextFunc
       .from('customers')
       .insert({
         profile_id: profileId,
-        company_name: input.company_name,
-        contact_name: input.contact_name ?? null,
-        contact_email: input.contact_email ?? null,
-        contact_phone: input.contact_phone ?? null,
+        customer_name: input.customer_name,
+        phone_number: input.phone_number ?? null,
+        email: input.email ?? null,
         address: input.address ?? null,
-        tax_code: input.tax_code ?? null,
         notes: input.notes ?? null,
         created_by: user.id,
       })
@@ -234,6 +235,85 @@ export async function deleteCustomer(req: Request, res: Response, next: NextFunc
     });
 
     sendSuccess(res, { id }, 'Xóa khách hàng thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /customers/:id/stats
+ * Get customer statistics: view history, financial summary
+ */
+export async function getCustomerStats(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    // Verify customer exists
+    const { data: customer, error: custError } = await supabaseAdmin
+      .from('customers')
+      .select('id, customer_name')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .single();
+
+    if (custError || !customer) throw ApiError.notFound('Khách hàng không tồn tại');
+
+    // 1. View sessions (lịch sử xem báo giá)
+    const { data: sessions } = await supabaseAdmin
+      .from('view_sessions')
+      .select('*, price_lists(id, title, status)')
+      .eq('customer_id', id)
+      .order('started_at', { ascending: false })
+      .limit(50);
+
+    // 2. Assigned price lists (báo giá được giao)
+    const { data: assignments } = await supabaseAdmin
+      .from('price_list_customers')
+      .select('*, price_lists(id, title, status, created_at, updated_at)')
+      .eq('customer_id', id)
+      .order('assigned_at', { ascending: false });
+
+    // 3. Orders (đơn hàng)
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('*')
+      .eq('customer_id', id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    // 4. Payments (lịch sử thanh toán)
+    const { data: payments } = await supabaseAdmin
+      .from('payments')
+      .select('*')
+      .eq('customer_id', id)
+      .order('paid_at', { ascending: false });
+
+    // 5. Activity summary (tóm tắt lượt xem)
+    const { data: activityRow } = await supabaseAdmin
+      .from('v_customer_activity')
+      .select('total_sessions, last_viewed_at, total_duration_seconds')
+      .eq('customer_id', id)
+      .single();
+
+    // 6. Financial summary (tổng hợp tài chính)
+    const { data: financialRow } = await supabaseAdmin
+      .from('v_customer_financials')
+      .select('total_orders_amount, total_paid, total_debt')
+      .eq('customer_id', id)
+      .single();
+
+    sendSuccess(res, {
+      sessions: sessions ?? [],
+      assigned_price_lists: assignments ?? [],
+      orders: orders ?? [],
+      payments: payments ?? [],
+      activity: activityRow ?? { total_sessions: 0, last_viewed_at: null, total_duration_seconds: 0 },
+      financials: financialRow ?? {
+        total_orders_amount: 0,
+        total_debt: 0,
+        total_paid: 0,
+      },
+    });
   } catch (error) {
     next(error);
   }

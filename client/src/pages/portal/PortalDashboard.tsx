@@ -24,10 +24,10 @@ export default function PortalDashboard() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          Xin chào, {user?.profile.display_name || user?.customer?.company_name || 'Khách hàng'}
+          Xin chào, {user?.profile.display_name || user?.customer?.customer_name || 'Khách hàng'}
         </h1>
         <p className="text-[14px] text-slate-500 mt-1">
-          {user?.customer?.company_name || 'Cổng báo giá dành cho khách hàng'}
+          {user?.customer?.customer_name || 'Cổng báo giá dành cho khách hàng'}
         </p>
       </div>
 

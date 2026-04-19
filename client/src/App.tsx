@@ -17,7 +17,11 @@ import ProductsPage from '@/pages/admin/ProductsPage';
 import PriceListsPage from '@/pages/admin/PriceListsPage';
 import PriceListDetailPage from '@/pages/admin/PriceListDetailPage';
 import CustomersPage from '@/pages/admin/CustomersPage';
+import CustomerDetailPage from '@/pages/admin/CustomerDetailPage';
 import AnalyticsPage from '@/pages/admin/AnalyticsPage';
+import OrdersPage from '@/pages/admin/OrdersPage';
+import PaymentsPage from '@/pages/admin/PaymentsPage';
+import FinancialDashboardPage from '@/pages/admin/FinancialDashboardPage';
 
 // Portal pages
 import PortalDashboard from '@/pages/portal/PortalDashboard';
@@ -72,7 +76,11 @@ function AppRoutes() {
           <Route path="/admin/price-lists" element={<PriceListsPage />} />
           <Route path="/admin/price-lists/:id" element={<PriceListDetailPage />} />
           <Route path="/admin/customers" element={<CustomersPage />} />
+          <Route path="/admin/customers/:id" element={<CustomerDetailPage />} />
           <Route path="/admin/analytics" element={<AnalyticsPage />} />
+          <Route path="/admin/orders" element={<OrdersPage />} />
+          <Route path="/admin/payments" element={<PaymentsPage />} />
+          <Route path="/admin/financial" element={<FinancialDashboardPage />} />
         </Route>
       </Route>
 

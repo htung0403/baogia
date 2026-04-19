@@ -6,8 +6,13 @@ export type Role = 'admin' | 'customer' | 'staff';
 
 export type PriceListStatus = 'draft' | 'published' | 'archived';
 export type VersionStatus = 'draft' | 'published' | 'superseded';
-export type AuditAction = 'create' | 'update' | 'delete' | 'restore' | 'publish' | 'archive' | 'assign' | 'unassign';
-export type EntityType = 'product' | 'price_list' | 'price_list_version' | 'customer' | 'price_list_customer';
+export type AuditAction = 'create' | 'update' | 'delete' | 'restore' | 'publish' | 'archive' | 'assign' | 'unassign' | 'confirm' | 'cancel';
+export type EntityType = 'product' | 'price_list' | 'price_list_version' | 'customer' | 'price_list_customer' | 'order' | 'payment';
+
+export type OrderStatus = 'draft' | 'confirmed' | 'cancelled';
+export type PaymentMethod = 'cash' | 'transfer' | 'card' | 'momo';
+export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
+export type OrderPaymentStatus = 'paid' | 'partial' | 'unpaid' | 'not_applicable' | 'cancelled';
 
 // ============================================================
 // Database Row Types
@@ -26,12 +31,10 @@ export interface Profile {
 export interface Customer {
   id: string;
   profile_id: string | null;
-  company_name: string;
-  contact_name: string | null;
-  contact_email: string | null;
-  contact_phone: string | null;
+  customer_name: string;
+  phone_number: string | null;
+  email: string | null;
   address: string | null;
-  tax_code: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;
@@ -136,6 +139,86 @@ export interface ViewSessionItem {
   product_id: string;
   viewed_at: string;
   view_duration_seconds: number;
+}
+
+// ============================================================
+// Order Management + Financial Tracking Types
+// ============================================================
+
+export interface Order {
+  id: string;
+  customer_id: string;
+  created_by: string | null;
+  code: string;
+  status: OrderStatus;
+  order_date: string;
+  total_amount: number;
+  discount_amount: number;
+  final_amount: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  product_id: string;
+  product_name: string;
+  product_price_snapshot: number | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface OrderWithDetails extends Order {
+  items: OrderItem[];
+  payment_summary: OrderPaymentSummary;
+  customer?: { customer_name: string; phone_number: string | null };
+  created_by_profile?: { display_name: string };
+}
+
+export interface OrderPaymentSummary {
+  order_id: string;
+  order_status: OrderStatus;
+  final_amount: number;
+  total_paid: number;
+  remaining: number;
+  payment_status: OrderPaymentStatus;
+}
+
+export interface Payment {
+  id: string;
+  customer_id: string;
+  order_id: string | null;
+  code: string;
+  amount: number;
+  payment_method: PaymentMethod;
+  status: PaymentStatus;
+  notes: string | null;
+  created_by: string | null;
+  paid_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerCredit {
+  id: string;
+  customer_id: string;
+  balance: number;
+  updated_at: string;
+}
+
+export interface CustomerFinancial {
+  customer_id: string;
+  total_orders_amount: number;
+  total_paid: number;
+  total_debt: number;
+  credit_balance: number;
+  last_payment_date: string | null;
 }
 
 export interface AuditLog {

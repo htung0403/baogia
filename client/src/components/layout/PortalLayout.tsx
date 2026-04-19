@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { useState } from 'react';
+import { displayEmailOrPhone } from '@/lib/utils';
 
 const portalNavItems = [
   { to: '/portal', icon: LayoutDashboard, label: 'Bảng điều khiển', end: true },
@@ -85,7 +86,7 @@ export default function PortalLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold text-slate-100 truncate leading-tight">{user?.profile.display_name}</p>
-                <p className="text-[11px] text-slate-500 truncate">{user?.customer?.company_name || user?.email}</p>
+                <p className="text-[11px] text-slate-500 truncate">{displayEmailOrPhone(user?.email)}</p>
               </div>
             </div>
             <button
@@ -122,7 +123,7 @@ export default function PortalLayout() {
           </span>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="flex-1 p-4 lg:p-6 overflow-auto relative z-0">
           <Outlet />
         </main>
       </div>

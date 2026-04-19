@@ -42,3 +42,50 @@ export function formatDuration(seconds: number | null | undefined): string {
   const m = Math.floor((seconds % 3600) / 60);
   return `${h}h ${m}m`;
 }
+
+/**
+ * Format phone number to E.164 (Vietnam +84 as default)
+ */
+export function formatPhoneE164(phone: string): string {
+  if (!phone) return '';
+  // Remove all non-digit characters
+  const cleaned = phone.replace(/\D/g, '');
+  // If starts with 0, replace with +84
+  if (cleaned.startsWith('0')) {
+    return `+84${cleaned.slice(1)}`;
+  }
+  // If already starts with 84 but no +, add +
+  if (cleaned.startsWith('84') && !phone.startsWith('+')) {
+    return `+${cleaned}`;
+  }
+  // If already starts with +84, return as is
+  if (phone.startsWith('+')) {
+    return phone;
+  }
+  // Default: assume it's a local number without leading 0
+  return `+84${cleaned}`;
+}
+
+/**
+ * Convert phone to shadow email for Supabase Auth compatibility
+ */
+export function phoneToEmail(phone: string): string {
+  const formatted = formatPhoneE164(phone);
+  return `${formatted.replace('+', '')}@baogia.internal`;
+}
+
+/**
+ * Format shadow email back to phone for display
+ */
+export function displayEmailOrPhone(emailOrPhone: string | null | undefined): string {
+  if (!emailOrPhone) return '';
+  if (emailOrPhone.endsWith('@baogia.internal')) {
+    const raw = emailOrPhone.replace('@baogia.internal', '');
+    // If raw starts with 84, convert to 0 for local display
+    if (raw.startsWith('84')) {
+      return `0${raw.slice(2)}`;
+    }
+    return raw;
+  }
+  return emailOrPhone;
+}

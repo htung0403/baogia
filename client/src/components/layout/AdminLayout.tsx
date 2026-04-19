@@ -9,14 +9,21 @@ import {
   LogOut,
   Menu,
   X,
+  ShoppingCart,
+  CreditCard,
+  TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
+import { displayEmailOrPhone } from '@/lib/utils';
 
 const adminNavItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Bảng điều khiển', end: true },
   { to: '/admin/products', icon: Package, label: 'Sản phẩm', end: false },
   { to: '/admin/price-lists', icon: FileSpreadsheet, label: 'Bảng giá', end: false },
   { to: '/admin/customers', icon: Users, label: 'Khách hàng', end: false },
+  { to: '/admin/orders', icon: ShoppingCart, label: 'Đơn hàng', end: false },
+  { to: '/admin/payments', icon: CreditCard, label: 'Thanh toán', end: false },
+  { to: '/admin/financial', icon: TrendingUp, label: 'Tài chính', end: false },
   { to: '/admin/analytics', icon: BarChart3, label: 'Thống kê', end: false },
 ];
 
@@ -88,7 +95,7 @@ export default function AdminLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold text-slate-100 truncate leading-tight">{user?.profile.display_name}</p>
-                <p className="text-[11px] text-slate-500 truncate">{user?.email}</p>
+                <p className="text-[11px] text-slate-500 truncate">{displayEmailOrPhone(user?.email)}</p>
               </div>
             </div>
             <button
@@ -127,7 +134,7 @@ export default function AdminLayout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="flex-1 p-4 lg:p-6 overflow-auto relative z-0">
           <Outlet />
         </main>
       </div>

@@ -4,6 +4,7 @@ import { ApiError } from '../utils/errors.js';
 import { sendSuccess } from '../utils/response.js';
 import { loginSchema, registerSchema } from '../validators/index.js';
 import { AuthenticatedRequest } from '../types/api.js';
+import { formatPhoneE164, phoneToEmail } from '../utils/phone.js';
 
 /**
  * POST /auth/login
@@ -11,15 +12,16 @@ import { AuthenticatedRequest } from '../types/api.js';
  */
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { email, password } = loginSchema.parse(req.body);
+    const { phone_number, password } = loginSchema.parse(req.body);
 
+    const email = phoneToEmail(phone_number);
     const { data, error } = await supabaseAdmin.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      throw ApiError.unauthorized('Email hoặc mật khẩu không đúng');
+      throw ApiError.unauthorized('Số điện thoại hoặc mật khẩu không đúng');
     }
 
     // Fetch profile
@@ -40,6 +42,7 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
     sendSuccess(res, {
       user: {
         id: data.user.id,
+        phone: data.user.phone,
         email: data.user.email,
         profile,
       },
@@ -60,8 +63,9 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
  */
 export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { email, password, display_name, role } = registerSchema.parse(req.body);
+    const { phone_number, password, display_name, role } = registerSchema.parse(req.body);
 
+    const email = phoneToEmail(phone_number);
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -69,12 +73,13 @@ export async function register(req: Request, res: Response, next: NextFunction):
       user_metadata: {
         display_name,
         role,
+        phone_number: formatPhoneE164(phone_number),
       },
     });
 
     if (error) {
       if (error.message.includes('already')) {
-        throw ApiError.conflict('Email đã được sử dụng');
+        throw ApiError.conflict('Số điện thoại đã được sử dụng');
       }
       throw ApiError.badRequest(error.message);
     }
@@ -90,6 +95,7 @@ export async function register(req: Request, res: Response, next: NextFunction):
     sendSuccess(res, {
       user: {
         id: data.user.id,
+        phone: data.user.phone,
         email: data.user.email,
         profile,
       },
@@ -121,6 +127,7 @@ export async function getMe(req: Request, res: Response, next: NextFunction): Pr
 
     sendSuccess(res, {
       id: user.id,
+      phone: user.phone,
       email: user.email,
       profile: user.profile,
       customer,

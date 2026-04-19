@@ -144,7 +144,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="min-w-0">
                         <p className="font-semibold text-slate-800 truncate leading-tight">
-                          {(session.customers as Record<string, string>)?.company_name || `Khách #${(session.customer_id as string)?.slice(0, 5) || 'Ẩn danh'}`}
+                          {(session.customers as Record<string, string>)?.customer_name || `Khách #${(session.customer_id as string)?.slice(0, 5) || 'Ẩn danh'}`}
                         </p>
                         <p className="text-[11px] text-slate-500 truncate mt-0.5 flex items-center gap-1">
                           <FileSpreadsheet className="w-3 h-3 opacity-70" />
