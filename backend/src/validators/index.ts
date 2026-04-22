@@ -15,6 +15,12 @@ export const registerSchema = z.object({
   role: z.enum(['admin', 'customer', 'staff']).default('customer'),
 });
 
+export const updateProfileSchema = z.object({
+  display_name: z.string().min(1, 'Tên hiển thị không được trống').optional(),
+  role: z.enum(['admin', 'customer', 'staff']).optional(),
+  is_active: z.boolean().optional(),
+});
+
 // ============================================================
 // PRODUCTS
 // ============================================================
@@ -42,6 +48,13 @@ export const createCustomerSchema = z.object({
   email: z.string().email('Email không hợp lệ').nullable().optional(),
   address: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  tax_code: z.string().nullable().optional(),
+  industry: z.string().nullable().optional(),
+  customer_group: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  fax: z.string().nullable().optional(),
+  skype: z.string().nullable().optional(),
+  facebook: z.string().nullable().optional(),
   // Optional: create a user account for this customer
   create_account: z.boolean().default(false),
   account_phone: z.string().min(10).optional(),
@@ -56,6 +69,13 @@ export const updateCustomerSchema = z.object({
   notes: z.string().nullable().optional(),
   assigned_to: z.string().uuid().optional().nullable(),
   source: z.string().optional().nullable(),
+  tax_code: z.string().nullable().optional(),
+  industry: z.string().nullable().optional(),
+  customer_group: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  fax: z.string().nullable().optional(),
+  skype: z.string().nullable().optional(),
+  facebook: z.string().nullable().optional(),
 });
 
 // ============================================================
@@ -122,6 +142,7 @@ export const updateCategorySchema = createCategorySchema.partial();
 // ============================================================
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
@@ -187,6 +208,32 @@ export const funnelQuerySchema = z.object({
   all_kh: z.string().optional().transform(v => v === 'true'),
 });
 
+// ============================================================
+// PIPELINE SETTINGS
+// ============================================================
+export const createColumnSchema = z.object({
+  name: z.string().min(1, 'Tên không được trống'),
+  color: z.string().optional().nullable(),
+  sort_order: z.number().int().default(0),
+});
+
+export const updateColumnSchema = createColumnSchema.partial();
+
+export const createStageSchema = z.object({
+  column_id: z.string().uuid('column_id phải là UUID hợp lệ'),
+  name: z.string().min(1, 'Tên không được trống'),
+  description: z.string().optional().nullable(),
+  color: z.string().optional().nullable(),
+  sort_order: z.number().int().default(0),
+});
+
+export const updateStageSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional().nullable(),
+  color: z.string().optional().nullable(),
+  sort_order: z.number().int().optional(),
+});
+
 // Create activity
 export const createActivitySchema = z.object({
   customer_id:     z.string().uuid(),
@@ -227,3 +274,7 @@ export type FunnelQueryInput = z.infer<typeof funnelQuerySchema>;
 export type CreateActivityInput = z.infer<typeof createActivitySchema>;
 export type CreateQuoteInput = z.infer<typeof createQuoteSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
+export type CreateColumnInput = z.infer<typeof createColumnSchema>;
+export type UpdateColumnInput = z.infer<typeof updateColumnSchema>;
+export type CreateStageInput = z.infer<typeof createStageSchema>;
+export type UpdateStageInput = z.infer<typeof updateStageSchema>;

@@ -15,12 +15,14 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { displayEmailOrPhone } from '@/lib/utils';
+import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 
 const adminNavItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Bảng điều khiển', end: true },
   { to: '/admin/products', icon: Package, label: 'Sản phẩm', end: false },
   { to: '/admin/price-lists', icon: FileSpreadsheet, label: 'Bảng giá', end: false },
   { to: '/admin/customers', icon: Users, label: 'Khách hàng', end: false },
+  { to: '/admin/employees', icon: Users, label: 'Nhân viên', end: false },
   { to: '/admin/orders', icon: ShoppingCart, label: 'Đơn hàng', end: false },
   { to: '/admin/payments', icon: CreditCard, label: 'Thanh toán', end: false },
   { to: '/admin/financial', icon: TrendingUp, label: 'Tài chính', end: false },
@@ -131,7 +133,9 @@ export default function AdminLayout() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex-1" />
+          <div className="flex-1 flex items-center">
+            <Breadcrumbs />
+          </div>
           <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
             {user?.profile.role.toUpperCase()}
           </span>

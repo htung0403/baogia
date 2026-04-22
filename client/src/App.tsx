@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/store/auth.store';
+import { ToastProvider } from '@/components/ui/toast';
 
 // Layouts
 import AdminLayout from '@/components/layout/AdminLayout';
@@ -22,6 +23,7 @@ import AnalyticsPage from '@/pages/admin/AnalyticsPage';
 import OrdersPage from '@/pages/admin/OrdersPage';
 import PaymentsPage from '@/pages/admin/PaymentsPage';
 import FinancialDashboardPage from '@/pages/admin/FinancialDashboardPage';
+import EmployeesPage from '@/pages/admin/EmployeesPage';
 
 // Portal pages
 import PortalDashboard from '@/pages/portal/PortalDashboard';
@@ -81,6 +83,7 @@ function AppRoutes() {
           <Route path="/admin/orders" element={<OrdersPage />} />
           <Route path="/admin/payments" element={<PaymentsPage />} />
           <Route path="/admin/financial" element={<FinancialDashboardPage />} />
+          <Route path="/admin/employees" element={<EmployeesPage />} />
         </Route>
       </Route>
 
@@ -126,9 +129,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

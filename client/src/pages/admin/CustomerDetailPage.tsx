@@ -1,36 +1,66 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { customerApi } from '@/api/client';
+import { customerApi, profilesApi, pipelineApi } from '@/api/client';
 import { formatDate, formatDuration, formatCurrency } from '@/lib/utils';
 import type { Customer } from '@/types';
+import { CrmStatCard } from '@/components/ui/CrmStatCard';
+import { useToast } from '@/components/ui/toast';
 import {
-  ArrowLeft,
-  Building2,
   Phone,
   Mail,
   MapPin,
-  StickyNote,
-  User,
-  Eye,
+  Calendar,
+  Clock,
+  CheckCircle2,
+  FileText,
+  Building2,
+  MessageSquare,
+  MessageCircle,
   ShoppingCart,
-  CreditCard,
+  Target,
+  Map,
+  Zap,
+  Share2,
+  Ticket as TicketIcon,
+  AlertCircle,
+  Edit,
+  Trash2,
+  Flag,
+  MoreHorizontal,
   TrendingUp,
   TrendingDown,
-  Wallet,
-  Clock,
-  FileText,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
+  StickyNote,
+  User,
+  Facebook,
+  Eye,
+  CreditCard,
+  Search,
 } from 'lucide-react';
+import TiptapEditor from '@/components/ui/TiptapEditor';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-type Tab = 'info' | 'view-history' | 'orders' | 'payments';
+type Tab = 'trao-doi' | 'kh-phan-hoi' | 'giao-dich' | 'lich-hen' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'ticket' | 'lich-su-trang-thai';
 
 // ──────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────
-function StatCard({
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'Vừa xong';
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes} phút trước`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours} giờ trước`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) return `${diffInDays} ngày trước`;
+  return formatDate(dateString);
+}
+
+export function StatCard({
   label,
   value,
   icon: Icon,
@@ -79,10 +109,16 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 }
 
 const TAB_LIST: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: 'info', label: 'Thông tin khách hàng', icon: User },
-  { id: 'view-history', label: 'Lịch sử xem báo giá', icon: Eye },
-  { id: 'orders', label: 'Đơn hàng', icon: ShoppingCart },
-  { id: 'payments', label: 'Lịch sử thanh toán', icon: CreditCard },
+  { id: 'trao-doi', label: 'Trao đổi', icon: MessageSquare },
+  { id: 'kh-phan-hoi', label: 'KH phản hồi', icon: MessageCircle },
+  { id: 'giao-dich', label: 'Giao dịch', icon: ShoppingCart },
+  { id: 'lich-su-trang-thai', label: 'Lịch sử chuyển trạng thái', icon: Clock },
+  { id: 'lich-hen', label: 'Lịch hẹn', icon: Calendar },
+  { id: 'co-hoi', label: 'Cơ hội', icon: Target },
+  { id: 'lich-di-tuyen', label: 'Lịch đi tuyến', icon: Map },
+  { id: 'automation', label: 'Automation', icon: Zap },
+  { id: 'gioi-thieu', label: 'Giới thiệu', icon: Share2 },
+  { id: 'ticket', label: 'Ticket', icon: TicketIcon },
 ];
 
 // ──────────────────────────────────────────────
@@ -91,7 +127,8 @@ const TAB_LIST: { id: Tab; label: string; icon: React.ElementType }[] = [
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<Tab>('info');
+  const [activeTab, setActiveTab] = useState<Tab>('trao-doi');
+  const toast = useToast();
 
   const { data: customerRes, isLoading: customerLoading } = useQuery({
     queryKey: ['customer', id],
@@ -100,21 +137,83 @@ export default function CustomerDetailPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+
+  const { data: profilesRes } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: () => profilesApi.list(),
+    enabled: !!customerRes?.data?.data,
+    retry: false,
+  });
+
+  const { data: boardRes } = useQuery({
+    queryKey: ['pipeline-board'],
+    queryFn: () => pipelineApi.getBoard(),
+    enabled: !!customerRes?.data?.data,
+    retry: false,
+  });
+
+  const profiles = profilesRes?.data?.data || [];
+  const pipelineColumns = boardRes?.data?.data?.columns || [];
+  const allStages = pipelineColumns.flatMap((c: any) => c.stages || []);
+
+  const customer: Customer | undefined = customerRes?.data?.data;
+  const queryClient = useQueryClient();
+
+  const currentStageId = customer
+    ? (allStages.find((s: any) => (s.customers || []).some((c: any) => c.id === customer.id))?.id ?? '')
+    : '';
+
+  const assignStageMutation = useMutation({
+    mutationFn: (stageId: string) => pipelineApi.assignStage(id!, stageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-stats', id] });
+      toast.success('Cập nhật trạng thái thành công');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể cập nhật trạng thái', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const assignOwnerMutation = useMutation({
+    mutationFn: (assignedTo: string | null) => customerApi.update(id!, { assigned_to: assignedTo }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer', id] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-funnel'] });
+      toast.success('Cập nhật người phụ trách thành công');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể cập nhật người phụ trách', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const profileFields = [
+    'customer_name', 'phone_number', 'email', 'address', 'tax_code',
+    'industry', 'customer_group', 'website', 'fax', 'skype', 'facebook', 'source', 'assigned_to'
+  ];
+  let completenessPercent = 0;
+  if (customer) {
+    const completedCount = profileFields.filter(f => !!(customer as any)[f]).length;
+    completenessPercent = Math.round((completedCount / profileFields.length) * 100);
+  }
+
   const { data: statsRes, isLoading: statsLoading } = useQuery({
     queryKey: ['customer-stats', id],
     queryFn: () => customerApi.getStats(id!),
-    enabled: !!id,
+    enabled: !!customerRes?.data?.data,
+    retry: false,
     staleTime: 60 * 1000,
   });
 
-  const customer: Customer | undefined = customerRes?.data?.data;
   const stats = statsRes?.data?.data;
+// @ts-ignore
   const sessions: ViewSession[] = stats?.sessions ?? [];
+  // @ts-ignore
   const assignedPriceLists: AssignedPriceList[] = stats?.assigned_price_lists ?? [];
   const orders: any[] = stats?.orders ?? [];
   const payments: any[] = stats?.payments ?? [];
-  const financials = stats?.financials ?? { total_orders_amount: 0, total_debt: 0, total_paid: 0 };
-  const activity = stats?.activity ?? { total_sessions: 0, last_viewed_at: null, total_duration_seconds: 0 };
+  const stageHistory: StageHistoryItem[] = stats?.stage_history ?? [];
 
   const isLoading = customerLoading || statsLoading;
 
@@ -148,128 +247,243 @@ export default function CustomerDetailPage() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-start gap-4">
-        <button
-          onClick={() => navigate('/admin/customers')}
-          className="mt-0.5 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
-              <Building2 className="w-5 h-5 text-indigo-600" />
+    <div className="flex items-start gap-6 w-full">
+      {/* Left Sidebar */}
+      <div className="w-[350px] shrink-0 space-y-4 sticky top-6">
+        {/* Header */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative">
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <button className="text-slate-400 hover:text-indigo-600 transition-colors" title="Sửa"><Edit className="w-4 h-4" /></button>
+            <button className="text-slate-400 hover:text-rose-600 transition-colors" title="Xóa"><Trash2 className="w-4 h-4" /></button>
+            <button className="text-slate-400 hover:text-amber-600 transition-colors" title="Gắn cờ"><Flag className="w-4 h-4" /></button>
+            <button className="text-slate-400 hover:text-slate-700 transition-colors"><MoreHorizontal className="w-4 h-4" /></button>
+          </div>
+          <div className="flex flex-col items-center text-center mt-2">
+            <div className="w-20 h-20 rounded-full bg-indigo-50 border-4 border-white shadow-sm flex items-center justify-center mb-3">
+              <Building2 className="w-10 h-10 text-indigo-600" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">{customer.customer_name}</h1>
-              <p className="text-[13px] text-slate-500 mt-0.5 flex items-center gap-2">
-                {customer.phone_number && (
-                  <>
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>{customer.phone_number}</span>
-                  </>
-                )}
-                {customer.profile_id && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Có tài khoản
-                  </span>
-                )}
-              </p>
+            <h2 className="text-lg font-bold text-slate-900">{customer.customer_name}</h2>
+            <p className="text-[13px] text-slate-500 mt-1">{customer.phone_number || 'Chưa có SĐT'}</p>
+          </div>
+          
+          <div className="mt-5">
+            <div className="flex items-center justify-between text-[12px] font-medium mb-1.5">
+              <span className="text-slate-600">Hoàn thiện hồ sơ</span>
+              <span className="text-indigo-600 font-bold">{completenessPercent}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${completenessPercent}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Quick action buttons */}
-        {customer.phone_number && (
-          <div className="flex items-center gap-2 shrink-0">
-            <a
-              href={`tel:${customer.phone_number}`}
-              className="inline-flex items-center gap-1.5 h-9 px-3 text-[12px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all cursor-pointer"
-              title="Gọi điện"
-            >
-              <Phone className="w-3.5 h-3.5" />
-              Gọi
-            </a>
-            <a
-              href={`https://zalo.me/${customer.phone_number.replace(/\D/g, '')}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 h-9 px-3 text-[12px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all cursor-pointer"
-              title="Nhắn Zalo"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Zalo
-            </a>
+        {/* Contact Info */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+          <div className="flex items-center gap-3 text-[13px]">
+            <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-slate-700 truncate">{customer.phone_number || '—'}</span>
           </div>
-        )}
+          <div className="flex items-center gap-3 text-[13px]">
+            <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-slate-700 truncate">{customer.email || '—'}</span>
+          </div>
+          <div className="flex items-center gap-3 text-[13px]">
+            <StickyNote className="w-4 h-4 text-slate-400 shrink-0" /> {/* Fax */}
+            <span className="text-slate-700 truncate">{customer.fax || '—'} (Fax)</span>
+          </div>
+          <div className="flex items-center gap-3 text-[13px]">
+            <MessageCircle className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-slate-700 truncate">{customer.skype || '—'}</span>
+          </div>
+          <div className="flex items-center gap-3 text-[13px]">
+            <Facebook className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-slate-700 truncate">{customer.facebook || '—'}</span>
+          </div>
+        </div>
+
+        {/* Management */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Mối quan hệ</label>
+            <select
+              value={currentStageId}
+              onChange={(e) => {
+                const nextStageId = e.target.value;
+                if (!nextStageId || nextStageId === currentStageId) return;
+                assignStageMutation.mutate(nextStageId);
+              }}
+              disabled={!customer || assignStageMutation.isPending}
+              className="w-full h-9 px-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-500 disabled:opacity-60"
+            >
+              <option value="">Chọn giai đoạn</option>
+              {allStages.map((s: any) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Người phụ trách</label>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
+                <User className="w-4 h-4 text-slate-500" />
+              </div>
+              <select
+                value={customer.assigned_to || ''}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const nextAssignedTo = value || null;
+                  if ((customer.assigned_to || null) === nextAssignedTo) return;
+                  assignOwnerMutation.mutate(nextAssignedTo);
+                }}
+                disabled={assignOwnerMutation.isPending}
+                className="flex-1 h-9 px-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-500 disabled:opacity-60"
+              >
+                <option value="">Chọn nhân viên</option>
+                {profiles.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.display_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Connections */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Người liên quan</label>
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-2">
+              <div className="w-8 h-8 rounded-full bg-indigo-100 border-2 border-white flex items-center justify-center z-10"><User className="w-4 h-4 text-indigo-600"/></div>
+              <div className="w-8 h-8 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center z-0"><User className="w-4 h-4 text-emerald-600"/></div>
+            </div>
+            <button className="w-8 h-8 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all">
+              <span className="text-lg leading-none mb-0.5">+</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-3 gap-2">
+          <CrmStatCard label="Tương tác" value="12" icon={TrendingUp} color="blue" />
+          <CrmStatCard label="Đơn hàng" value={orders.length.toString()} icon={ShoppingCart} color="green" />
+          <CrmStatCard label="Công nợ" value="0" icon={TrendingDown} color="orange" />
+        </div>
+
+        {/* Main Info */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-0 divide-y divide-slate-100">
+          <div className="flex items-center justify-between py-2.5">
+            <span className="text-[12px] text-slate-500">Mã số thuế</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-slate-900">{customer.tax_code || '—'}</span>
+              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-2.5">
+            <span className="text-[12px] text-slate-500">Lĩnh vực</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-slate-900">{customer.industry || '—'}</span>
+              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-2.5">
+            <span className="text-[12px] text-slate-500">Nhóm KH</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-slate-900">{customer.customer_group || '—'}</span>
+              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-2.5">
+            <span className="text-[12px] text-slate-500">Website</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-slate-900">{customer.website || '—'}</span>
+              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+        </div>
+
+        {/* Metadata */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Nguồn</span>
+            <span className="font-medium text-slate-700">{customer.source || '—'}</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Ngày tạo</span>
+            <span className="font-medium text-slate-700">{formatDate(customer.created_at)}</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Đã mua</span>
+            <span className="font-medium text-slate-700">{orders.length} đơn</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Lần cuối mua</span>
+            <span className="font-medium text-slate-700">{orders.length > 0 ? formatDate(orders[0].created_at) : '—'}</span>
+          </div>
+        </div>
+
+        {/* Stage Transition History */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider">Lịch sử chuyển trạng thái</h3>
+            <span className="text-[11px] font-medium text-slate-400">{stageHistory.length} lần</span>
+          </div>
+
+          {stageHistory.length === 0 ? (
+            <p className="text-[12px] text-slate-400">Chưa có lịch sử chuyển trạng thái</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {stageHistory.map((item) => (
+                <div key={item.id} className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/70">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[12px] font-semibold text-slate-700">{item.from_stage?.name || 'Khởi tạo'}</span>
+                    <span className="text-[11px] text-slate-400">→</span>
+                    <span className="text-[12px] font-bold text-indigo-700">{item.to_stage?.name || '—'}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <span>{item.moved_by_profile?.display_name || 'Hệ thống'}</span>
+                    <span className="tabular-nums">{formatDate(item.moved_at)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          label="Tổng doanh thu"
-          value={financials.total_orders_amount > 0 ? `${formatCurrency(financials.total_orders_amount)}đ` : '—'}
-          icon={TrendingUp}
-          color="indigo"
-          sub={orders.length > 0 ? `Từ ${orders.length} đơn hàng` : 'Chưa có đơn hàng'}
-        />
-        <StatCard
-          label="Công nợ"
-          value={financials.total_debt > 0 ? `${formatCurrency(financials.total_debt)}đ` : '—'}
-          icon={TrendingDown}
-          color="rose"
-          sub={financials.total_debt > 0 ? 'Cần thu hồi' : 'Đã đối soát hết'}
-        />
-        <StatCard
-          label="Đã thanh toán"
-          value={financials.total_paid > 0 ? `${formatCurrency(financials.total_paid)}đ` : '—'}
-          icon={Wallet}
-          color="emerald"
-          sub={payments.length > 0 ? `Giao dịch cuối: ${formatDate(payments[0].paid_at)}` : 'Chưa có thanh toán'}
-        />
-        <StatCard
-          label="Lượt xem BG"
-          value={String(activity.total_sessions)}
-          icon={Eye}
-          color="amber"
-          sub={activity.last_viewed_at ? `Lần cuối: ${formatDate(activity.last_viewed_at)}` : 'Chưa xem'}
-        />
-      </div>
+      {/* Right Content */}
+      <div className="flex-1 min-w-0 flex flex-col min-h-screen">
+        {/* Tabs */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 overflow-x-auto mb-5 shrink-0">
+          {TAB_LIST.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'bg-white shadow-sm text-indigo-600'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <tab.icon className="w-3.5 h-3.5" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 overflow-x-auto">
-        {TAB_LIST.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === tab.id
-                ? 'bg-white shadow-sm text-indigo-600'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <tab.icon className="w-3.5 h-3.5" />
-            {tab.label}
-          </button>
-        ))}
+        {/* Tab Content */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {activeTab === 'trao-doi' && <TabTraoDoi customerId={customer.id} />}
+          {activeTab === 'giao-dich' && (
+            <div className="space-y-4">
+              <TabOrders orders={orders} />
+              <TabPayments payments={payments} />
+            </div>
+          )}
+          {activeTab === 'lich-su-trang-thai' && <TabStageHistory history={stageHistory} />}
+          {['kh-phan-hoi', 'lich-hen', 'co-hoi', 'lich-di-tuyen', 'automation', 'gioi-thieu', 'ticket'].includes(activeTab) && (
+            <TabPlaceholder id={activeTab} />
+          )}
+        </div>
       </div>
-
-      {/* Tab Content */}
-      {activeTab === 'info' && (
-        <TabInfo customer={customer} />
-      )}
-      {activeTab === 'view-history' && (
-        <TabViewHistory sessions={sessions} assignedPriceLists={assignedPriceLists} />
-      )}
-      {activeTab === 'orders' && (
-        <TabOrders orders={orders} />
-      )}
-      {activeTab === 'payments' && (
-        <TabPayments payments={payments} />
-      )}
     </div>
   );
 }
@@ -297,10 +511,18 @@ interface AssignedPriceList {
   price_lists?: { id: string; title: string; status: string; created_at: string; updated_at: string } | null;
 }
 
+interface StageHistoryItem {
+  id: string;
+  moved_at: string;
+  from_stage?: { id: string; name: string } | null;
+  to_stage?: { id: string; name: string } | null;
+  moved_by_profile?: { display_name: string } | null;
+}
+
 // ──────────────────────────────────────────────
 // Tab: Thông tin khách hàng
 // ──────────────────────────────────────────────
-function TabInfo({ customer }: { customer: Customer }) {
+export function TabInfo({ customer }: { customer: Customer }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* Basic info card */}
@@ -367,7 +589,7 @@ function TabInfo({ customer }: { customer: Customer }) {
 // ──────────────────────────────────────────────
 // Tab: Lịch sử xem báo giá
 // ──────────────────────────────────────────────
-function TabViewHistory({
+export function TabViewHistory({
   sessions,
   assignedPriceLists,
 }: {
@@ -473,6 +695,185 @@ function TabViewHistory({
             </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Tab: Placeholder
+// ──────────────────────────────────────────────
+export function TabPlaceholder({ id: _id }: { id: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
+        <AlertCircle className="w-8 h-8 text-slate-300" />
+      </div>
+      <p className="text-[14px] font-bold text-slate-600">Chưa có dữ liệu</p>
+      <p className="text-[13px] text-slate-400 mt-1">Tính năng này đang được cập nhật hoặc chưa có dữ liệu cho khách hàng này.</p>
+    </div>
+  );
+}
+
+function TabStageHistory({ history }: { history: StageHistoryItem[] }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50/50">
+        <h2 className="text-[13px] font-bold text-slate-800">Lịch sử chuyển trạng thái</h2>
+        <span className="text-[12px] text-slate-400">{history.length} lần chuyển</span>
+      </div>
+
+      {history.length === 0 ? (
+        <div className="text-center py-14 text-[13px] text-slate-400">Chưa có lịch sử chuyển trạng thái</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b bg-slate-50/30">
+                <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Từ trạng thái</th>
+                <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Đến trạng thái</th>
+                <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Người thao tác</th>
+                <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Thời gian</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {history.map((item) => (
+                <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="py-3.5 px-5 font-semibold text-slate-700">{item.from_stage?.name || 'Khởi tạo'}</td>
+                  <td className="py-3.5 px-5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      {item.to_stage?.name || '—'}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-5 text-slate-600">{item.moved_by_profile?.display_name || 'Hệ thống'}</td>
+                  <td className="py-3.5 px-5 text-[12px] text-slate-400 tabular-nums">{formatDate(item.moved_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Tab: Trao đổi
+// ──────────────────────────────────────────────
+function TabTraoDoi({ customerId }: { customerId: string }) {
+  const [content, setContent] = useState('');
+  const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const { data: activitiesRes, isLoading } = useQuery({
+    queryKey: ['activities', customerId],
+    queryFn: () => pipelineApi.listActivities(customerId),
+    enabled: !!customerId,
+    retry: false,
+  });
+
+  const createActivity = useMutation({
+    mutationFn: (htmlContent: string) =>
+      pipelineApi.createActivity({
+        customer_id: customerId,
+        activity_type: 'trao_doi',
+        title: 'Trao đổi',
+        description: htmlContent,
+      }),
+    onSuccess: () => {
+      setContent('');
+      queryClient.invalidateQueries({ queryKey: ['activities', customerId] });
+      toast.success('Đã gửi trao đổi');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể gửi trao đổi', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const handleSubmit = () => {
+    if (!content.trim() || content === '<p></p>') return;
+    createActivity.mutate(content);
+  };
+
+  const activities = activitiesRes?.data?.data || [];
+  const filteredActivities = activities.filter((act: any) => {
+    if (!search) return true;
+    const term = search.toLowerCase();
+    return (
+      (act.title && act.title.toLowerCase().includes(term)) ||
+      (act.description && act.description.toLowerCase().includes(term))
+    );
+  });
+
+  return (
+    <div className="flex flex-col h-full space-y-4">
+      {/* Editor Box */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden p-4">
+        <TiptapEditor 
+          content={content} 
+          onChange={setContent} 
+          placeholder="Nhập nội dung trao đổi..."
+          className="mb-3"
+        />
+        <div className="flex justify-end">
+          <button
+            onClick={handleSubmit}
+            disabled={createActivity.isPending || !content.trim() || content === '<p></p>'}
+            className="h-9 px-5 bg-indigo-600 text-white text-[13px] font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {createActivity.isPending ? 'Đang gửi...' : 'Gửi'}
+          </button>
+        </div>
+      </div>
+
+      {/* Activity Feed */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h3 className="text-[14px] font-bold text-slate-800">Lịch sử trao đổi</h3>
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input 
+              type="text" 
+              placeholder="Tìm kiếm..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-500 w-[200px]"
+            />
+          </div>
+        </div>
+
+        <div className="p-4 flex-1 overflow-y-auto space-y-6">
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : filteredActivities.length === 0 ? (
+            <div className="text-center py-10">
+              <p className="text-[13px] text-slate-500">Không có trao đổi nào.</p>
+            </div>
+          ) : (
+            filteredActivities.map((act: any) => (
+              <div key={act.id} className="flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                  <User className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-[13px] text-slate-800">
+                      {act.profiles?.display_name || 'Người dùng'}
+                    </span>
+                    <span className="text-[12px] text-slate-400">• {formatRelativeTime(act.created_at)}</span>
+                  </div>
+                  <div 
+                    className="prose prose-sm max-w-none text-slate-700 bg-slate-50 border border-slate-100 p-3 rounded-lg rounded-tl-none"
+                    dangerouslySetInnerHTML={{ __html: act.description || '' }}
+                  />
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

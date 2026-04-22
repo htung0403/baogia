@@ -54,11 +54,13 @@ api.interceptors.response.use(
           // Refresh failed, clear tokens
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
+          localStorage.removeItem('auth-storage');
           window.location.href = '/login';
         }
       } else {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        localStorage.removeItem('auth-storage');
         window.location.href = '/login';
       }
     }
@@ -297,8 +299,11 @@ export const financialApi = {
 
 // --- Profiles (staff dropdowns) ---
 export const profilesApi = {
-  list: (params?: { role?: string }) =>
+  list: (params?: { role?: string; include_inactive?: boolean; search?: string }) =>
     api.get('/profiles', { params }),
+
+  update: (id: string, data: { display_name?: string; role?: 'admin' | 'staff' | 'customer'; is_active?: boolean }) =>
+    api.put(`/profiles/${id}`, data),
 };
 
 // --- Pipeline ---
@@ -319,6 +324,9 @@ export const pipelineApi = {
     api.get('/pipeline/funnel', { params }),
 
   // Activities
+  listActivities: (customerId: string) =>
+    api.get(`/pipeline/activities/${customerId}`),
+
   createActivity: (data: {
     customer_id: string; activity_type: string; title: string;
     description?: string | null; assigned_to?: string | null; related_project?: string | null;
@@ -343,5 +351,24 @@ export const pipelineApi = {
     start_date?: string | null; end_date?: string | null; notes?: string | null;
   }) =>
     api.post('/pipeline/contracts', data),
+
+  // Settings
+  createColumn: (data: { name: string; color?: string | null; sort_order?: number }) =>
+    api.post('/pipeline/columns', data),
+
+  updateColumn: (id: string, data: { name?: string; color?: string | null; sort_order?: number }) =>
+    api.put(`/pipeline/columns/${id}`, data),
+
+  deleteColumn: (id: string) =>
+    api.delete(`/pipeline/columns/${id}`),
+
+  createStage: (data: { column_id: string; name: string; description?: string | null; color?: string | null; sort_order?: number }) =>
+    api.post('/pipeline/stages', data),
+
+  updateStage: (id: string, data: { name?: string; description?: string | null; color?: string | null; sort_order?: number }) =>
+    api.put(`/pipeline/stages/${id}`, data),
+
+  deleteStage: (id: string) =>
+    api.delete(`/pipeline/stages/${id}`),
 };
 

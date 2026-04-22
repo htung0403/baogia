@@ -6,6 +6,7 @@ import { AuditService } from '../services/audit.service.js';
 import {
   assignStageSchema, funnelQuerySchema, createActivitySchema,
   createQuoteSchema, createContractSchema,
+  createColumnSchema, updateColumnSchema, createStageSchema, updateStageSchema
 } from '../validators/index.js';
 
 function getPeriodRange(period: string): { from?: string; to?: string } {
@@ -52,14 +53,17 @@ export async function getBoardData(req: Request, res: Response, next: NextFuncti
 
     const { data: pipelineRows, error: pipeErr } = await supabaseAdmin
       .from('customer_pipeline')
-      .select('stage_id, customers!inner(id, deleted_at)')
+      .select('stage_id, customers!inner(id, customer_name, email, phone_number, deleted_at)')
       .is('customers.deleted_at', null);
     if (pipeErr) throw ApiError.internal(pipeErr.message);
 
     const stageCountMap: Record<string, number> = {};
+    const stageCustomersMap: Record<string, any[]> = {};
     for (const row of (pipelineRows ?? [])) {
       const sid = row.stage_id as string;
       stageCountMap[sid] = (stageCountMap[sid] ?? 0) + 1;
+      if (!stageCustomersMap[sid]) stageCustomersMap[sid] = [];
+      if (row.customers) stageCustomersMap[sid].push(row.customers);
     }
 
     const result = (columns ?? []).map(col => ({
@@ -69,7 +73,7 @@ export async function getBoardData(req: Request, res: Response, next: NextFuncti
         .map(s => {
           const count = stageCountMap[s.id] ?? 0;
           const percent = total > 0 ? Math.round((count / total) * 10000) / 100 : 0;
-          return { ...s, count, percent };
+          return { ...s, count, percent, customers: stageCustomersMap[s.id] || [] };
         }),
     }));
 
@@ -375,6 +379,28 @@ export async function createActivity(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function listActivities(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { customerId } = req.params;
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+
+    const { data, error, count } = await supabaseAdmin
+      .from('customer_activities')
+      .select('*, profiles:created_by(display_name, avatar_url)', { count: 'exact' })
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw ApiError.internal(error.message);
+
+    sendSuccess(res, data ?? [], undefined, 200, {
+      page, limit, total: count ?? 0, totalPages: Math.ceil((count ?? 0) / limit),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function listQuotes(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
@@ -527,6 +553,128 @@ export async function createContract(req: Request, res: Response, next: NextFunc
     });
 
     sendCreated(res, data, 'Tạo hợp đồng thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ============================================================
+// PIPELINE SETTINGS
+// ============================================================
+
+export async function createPipelineColumn(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const input = createColumnSchema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('pipeline_columns')
+      .insert(input)
+      .select()
+      .single();
+    if (error) throw ApiError.internal(error.message);
+    sendCreated(res, data, 'Tạo cột thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updatePipelineColumn(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const input = updateColumnSchema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('pipeline_columns')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw ApiError.internal(error.message);
+    if (!data) throw ApiError.notFound('Không tìm thấy cột');
+    sendSuccess(res, data, 'Cập nhật cột thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deletePipelineColumn(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    
+    // Check if stages exist for this column
+    const { count: stageCount, error: stageErr } = await supabaseAdmin
+      .from('pipeline_stages')
+      .select('*', { count: 'exact', head: true })
+      .eq('column_id', id);
+      
+    if (stageErr) throw ApiError.internal(stageErr.message);
+    if (stageCount && stageCount > 0) {
+      throw ApiError.badRequest('Không thể xóa cột vì vẫn còn stages bên trong. Hãy xóa hoặc di chuyển các stage trước.');
+    }
+
+    const { error } = await supabaseAdmin
+      .from('pipeline_columns')
+      .delete()
+      .eq('id', id);
+    if (error) throw ApiError.internal(error.message);
+    sendSuccess(res, { id }, 'Xóa cột thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createPipelineStage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const input = createStageSchema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('pipeline_stages')
+      .insert(input)
+      .select()
+      .single();
+    if (error) throw ApiError.internal(error.message);
+    sendCreated(res, data, 'Tạo stage thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updatePipelineStage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const input = updateStageSchema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('pipeline_stages')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw ApiError.internal(error.message);
+    if (!data) throw ApiError.notFound('Không tìm thấy stage');
+    sendSuccess(res, data, 'Cập nhật stage thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deletePipelineStage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    
+    // Check if customers are assigned to this stage
+    const { count: custCount, error: custErr } = await supabaseAdmin
+      .from('customer_pipeline')
+      .select('*', { count: 'exact', head: true })
+      .eq('stage_id', id);
+      
+    if (custErr) throw ApiError.internal(custErr.message);
+    if (custCount && custCount > 0) {
+      throw ApiError.badRequest('Không thể xóa stage vì vẫn còn khách hàng. Hãy di chuyển khách hàng trước.');
+    }
+
+    const { error } = await supabaseAdmin
+      .from('pipeline_stages')
+      .delete()
+      .eq('id', id);
+    if (error) throw ApiError.internal(error.message);
+    sendSuccess(res, { id }, 'Xóa stage thành công');
   } catch (error) {
     next(error);
   }

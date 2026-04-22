@@ -16,17 +16,17 @@ ALTER TABLE customers
 CREATE INDEX IF NOT EXISTS idx_customers_source ON customers(source) WHERE deleted_at IS NULL;
 
 -- 1B: pipeline_columns
-CREATE TABLE pipeline_columns (
+CREATE TABLE IF NOT EXISTS pipeline_columns (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name        TEXT NOT NULL,
     color       TEXT NOT NULL DEFAULT 'slate',
     sort_order  INT NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_pipeline_columns_sort ON pipeline_columns(sort_order);
+CREATE INDEX IF NOT EXISTS idx_pipeline_columns_sort ON pipeline_columns(sort_order);
 
 -- 1C: pipeline_stages
-CREATE TABLE pipeline_stages (
+CREATE TABLE IF NOT EXISTS pipeline_stages (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     column_id   UUID NOT NULL REFERENCES pipeline_columns(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
@@ -35,21 +35,21 @@ CREATE TABLE pipeline_stages (
     sort_order  INT NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_pipeline_stages_column ON pipeline_stages(column_id);
-CREATE INDEX idx_pipeline_stages_sort ON pipeline_stages(column_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_pipeline_stages_column ON pipeline_stages(column_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_stages_sort ON pipeline_stages(column_id, sort_order);
 
 -- 1D: customer_pipeline
-CREATE TABLE customer_pipeline (
+CREATE TABLE IF NOT EXISTS customer_pipeline (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id UUID NOT NULL UNIQUE REFERENCES customers(id) ON DELETE CASCADE,
     stage_id    UUID NOT NULL REFERENCES pipeline_stages(id) ON DELETE RESTRICT,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     assigned_by UUID REFERENCES profiles(id) ON DELETE SET NULL
 );
-CREATE INDEX idx_customer_pipeline_stage ON customer_pipeline(stage_id);
+CREATE INDEX IF NOT EXISTS idx_customer_pipeline_stage ON customer_pipeline(stage_id);
 
 -- 1E: customer_stage_history
-CREATE TABLE customer_stage_history (
+CREATE TABLE IF NOT EXISTS customer_stage_history (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     from_stage_id   UUID REFERENCES pipeline_stages(id) ON DELETE SET NULL,
@@ -57,10 +57,10 @@ CREATE TABLE customer_stage_history (
     moved_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     moved_by        UUID REFERENCES profiles(id) ON DELETE SET NULL
 );
-CREATE INDEX idx_stage_history_customer ON customer_stage_history(customer_id, moved_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stage_history_customer ON customer_stage_history(customer_id, moved_at DESC);
 
 -- 1F: customer_activities
-CREATE TABLE customer_activities (
+CREATE TABLE IF NOT EXISTS customer_activities (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     activity_type   TEXT NOT NULL 
@@ -72,12 +72,12 @@ CREATE TABLE customer_activities (
     created_by      UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_activities_customer ON customer_activities(customer_id, created_at DESC);
-CREATE INDEX idx_activities_type ON customer_activities(activity_type);
-CREATE INDEX idx_activities_created ON customer_activities(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_customer ON customer_activities(customer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_type ON customer_activities(activity_type);
+CREATE INDEX IF NOT EXISTS idx_activities_created ON customer_activities(created_at DESC);
 
 -- 1G: quotes
-CREATE TABLE quotes (
+CREATE TABLE IF NOT EXISTS quotes (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     code            TEXT NOT NULL UNIQUE,
@@ -91,16 +91,16 @@ CREATE TABLE quotes (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ
 );
-CREATE INDEX idx_quotes_customer ON quotes(customer_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_quotes_code ON quotes(code) WHERE deleted_at IS NULL;
-CREATE INDEX idx_quotes_status ON quotes(status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_quotes_customer ON quotes(customer_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_quotes_code ON quotes(code) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status) WHERE deleted_at IS NULL;
 
-CREATE TRIGGER tr_quotes_updated
+CREATE OR REPLACE TRIGGER tr_quotes_updated
     BEFORE UPDATE ON quotes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- 1H: contracts
-CREATE TABLE contracts (
+CREATE TABLE IF NOT EXISTS contracts (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     code            TEXT NOT NULL UNIQUE,
@@ -116,11 +116,11 @@ CREATE TABLE contracts (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ
 );
-CREATE INDEX idx_contracts_customer ON contracts(customer_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_contracts_code ON contracts(code) WHERE deleted_at IS NULL;
-CREATE INDEX idx_contracts_status ON contracts(status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contracts_customer ON contracts(customer_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contracts_code ON contracts(code) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status) WHERE deleted_at IS NULL;
 
-CREATE TRIGGER tr_contracts_updated
+CREATE OR REPLACE TRIGGER tr_contracts_updated
     BEFORE UPDATE ON contracts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
@@ -134,14 +134,26 @@ ALTER TABLE quotes                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contracts              ENABLE ROW LEVEL SECURITY;
 
 -- Pipeline structure: readable by all authenticated
+DROP POLICY IF EXISTS "pipeline_columns_read" ON pipeline_columns;
 CREATE POLICY "pipeline_columns_read" ON pipeline_columns FOR SELECT USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "pipeline_stages_read" ON pipeline_stages;
 CREATE POLICY "pipeline_stages_read"  ON pipeline_stages  FOR SELECT USING (auth.role() = 'authenticated');
 
 -- All customer data: admin/staff only
+DROP POLICY IF EXISTS "customer_pipeline_admin" ON customer_pipeline;
 CREATE POLICY "customer_pipeline_admin"   ON customer_pipeline      FOR ALL USING (is_admin_or_staff());
+
+DROP POLICY IF EXISTS "customer_history_admin" ON customer_stage_history;
 CREATE POLICY "customer_history_admin"    ON customer_stage_history  FOR ALL USING (is_admin_or_staff());
+
+DROP POLICY IF EXISTS "customer_activities_admin" ON customer_activities;
 CREATE POLICY "customer_activities_admin" ON customer_activities     FOR ALL USING (is_admin_or_staff());
+
+DROP POLICY IF EXISTS "quotes_admin" ON quotes;
 CREATE POLICY "quotes_admin"              ON quotes                  FOR ALL USING (is_admin_or_staff());
+
+DROP POLICY IF EXISTS "contracts_admin" ON contracts;
 CREATE POLICY "contracts_admin"           ON contracts               FOR ALL USING (is_admin_or_staff());
 
 -- 1J: Seed Data
@@ -161,7 +173,7 @@ BEGIN
 
   -- Trước bán (2 stages)
   INSERT INTO pipeline_stages (column_id, name, color, sort_order) VALUES
-    (v_pre, 'Khách B', 'blue', 1), (v_pre, 'Toshiba', 'slate', 2);
+    (v_pre, 'Tiếp cận ban đầu', 'blue', 1), (v_pre, 'Khách hàng mới', 'slate', 2);
 
   -- Tư vấn (3 stages)
   INSERT INTO pipeline_stages (column_id, name, description, color, sort_order) VALUES

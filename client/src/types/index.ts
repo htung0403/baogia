@@ -31,6 +31,13 @@ export interface Customer {
   deleted_at: string | null;
   assigned_to: string | null;
   source: string | null;
+  tax_code: string | null;
+  industry: string | null;
+  customer_group: string | null;
+  website: string | null;
+  fax: string | null;
+  skype: string | null;
+  facebook: string | null;
   assigned_profile?: { display_name: string } | null;
 }
 
@@ -299,6 +306,7 @@ export interface PipelineStage {
   sort_order: number;
   count: number;       // customers currently in this stage (computed by API)
   percent: number;     // percentage of total active customers (computed)
+  customers?: { id: string; customer_name: string; email?: string | null; phone_number?: string | null; }[];
 }
 
 export interface PipelineColumn {
@@ -307,6 +315,33 @@ export interface PipelineColumn {
   color: string;
   sort_order: number;
   stages: PipelineStage[];
+}
+
+export interface CreatePipelineColumnInput {
+  name: string;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface UpdatePipelineColumnInput {
+  name?: string;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface CreatePipelineStageInput {
+  column_id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface UpdatePipelineStageInput {
+  name?: string;
+  description?: string | null;
+  color?: string | null;
+  sort_order?: number;
 }
 
 export interface BoardResponse {

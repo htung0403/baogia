@@ -134,6 +134,13 @@ export async function createCustomer(req: Request, res: Response, next: NextFunc
         email: input.email ?? null,
         address: input.address ?? null,
         notes: input.notes ?? null,
+        tax_code: input.tax_code ?? null,
+        industry: input.industry ?? null,
+        customer_group: input.customer_group ?? null,
+        website: input.website ?? null,
+        fax: input.fax ?? null,
+        skype: input.skype ?? null,
+        facebook: input.facebook ?? null,
         created_by: user.id,
       })
       .select('*')
@@ -305,7 +312,21 @@ export async function getCustomerStats(req: Request, res: Response, next: NextFu
       .eq('customer_id', id)
       .single();
 
-    // 6. Financial summary (tổng hợp tài chính)
+    // 6. Stage transition history (lịch sử chuyển trạng thái pipeline)
+    const { data: stageHistory } = await supabaseAdmin
+      .from('customer_stage_history')
+      .select(`
+        id,
+        moved_at,
+        from_stage:from_stage_id(id, name),
+        to_stage:to_stage_id(id, name),
+        moved_by_profile:moved_by(display_name)
+      `)
+      .eq('customer_id', id)
+      .order('moved_at', { ascending: false })
+      .limit(50);
+
+    // 7. Financial summary (tổng hợp tài chính)
     const { data: financialRow } = await supabaseAdmin
       .from('v_customer_financials')
       .select('total_orders_amount, total_paid, total_debt')
@@ -317,6 +338,7 @@ export async function getCustomerStats(req: Request, res: Response, next: NextFu
       assigned_price_lists: assignments ?? [],
       orders: orders ?? [],
       payments: payments ?? [],
+      stage_history: stageHistory ?? [],
       activity: activityRow ?? { total_sessions: 0, last_viewed_at: null, total_duration_seconds: 0 },
       financials: financialRow ?? {
         total_orders_amount: 0,

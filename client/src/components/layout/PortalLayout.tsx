@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { displayEmailOrPhone } from '@/lib/utils';
+import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 
 const portalNavItems = [
   { to: '/portal', icon: LayoutDashboard, label: 'Bảng điều khiển', end: true },
@@ -121,7 +122,9 @@ export default function PortalLayout() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex-1" />
+          <div className="flex-1 flex items-center">
+            <Breadcrumbs />
+          </div>
           <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded uppercase tracking-wider">
             Khách hàng
           </span>
