@@ -29,6 +29,9 @@ export interface Customer {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  assigned_to: string | null;
+  source: string | null;
+  assigned_profile?: { display_name: string } | null;
 }
 
 export interface ProductCategory {
@@ -281,4 +284,105 @@ export interface TopCustomerData {
   total_debt: number;
   last_payment_date?: string | null;
   customers?: { customer_name: string; phone_number: string | null };
+}
+
+// ============================================================
+// Pipeline & CRM (added with 3-tab feature)
+// ============================================================
+
+export interface PipelineStage {
+  id: string;
+  column_id: string;
+  name: string;
+  description: string | null;
+  color: string;       // Tailwind color name: 'blue', 'green', etc.
+  sort_order: number;
+  count: number;       // customers currently in this stage (computed by API)
+  percent: number;     // percentage of total active customers (computed)
+}
+
+export interface PipelineColumn {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  stages: PipelineStage[];
+}
+
+export interface BoardResponse {
+  columns: PipelineColumn[];
+  total_customers: number;
+}
+
+export interface CustomerPipeline {
+  id: string;
+  customer_id: string;
+  stage_id: string;
+  assigned_at: string;
+  assigned_by: string | null;
+}
+
+export interface CustomerActivity {
+  id: string;
+  customer_id: string;
+  activity_type: 'email' | 'sms' | 'zns' | 'call' | 'task' | 'meeting' | 'note' | 'trao_doi';
+  title: string;
+  description: string | null;
+  assigned_to: string | null;
+  related_project: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface FunnelBySource  { source: string | null; count: number; pct: number; amount?: number; }
+export interface FunnelByType    { type: string; count: number; }
+export interface FunnelByProject { project: string | null; count: number; }
+
+export interface FunnelResponse {
+  new_customers: { count: number; by_source: FunnelBySource[] };
+  interactions:  { count: number; by_type: FunnelByType[] };
+  activities:    { count: number; by_project: FunnelByProject[]; by_type: FunnelByType[] };
+  orders: {
+    count: number; quotes: number; contracts: number;
+    ratio: number; once: number; multiple: number; paid: number; unpaid: number;
+  };
+  revenue: { total: number; by_source: FunnelBySource[]; paid: number; unpaid: number };
+}
+
+export interface StaffProfile {
+  id: string;
+  display_name: string;
+  role: string;
+  avatar_url: string | null;
+  is_active: boolean;
+}
+
+export interface Quote {
+  id: string;
+  customer_id: string;
+  code: string;
+  title: string | null;
+  amount: number;
+  status: 'draft' | 'sent' | 'accepted' | 'rejected';
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface Contract {
+  id: string;
+  customer_id: string;
+  code: string;
+  title: string | null;
+  amount: number;
+  status: 'active' | 'expired' | 'cancelled' | 'renewed';
+  start_date: string | null;
+  end_date: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
 }

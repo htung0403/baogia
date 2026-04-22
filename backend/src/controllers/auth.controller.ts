@@ -127,7 +127,7 @@ export async function getMe(req: Request, res: Response, next: NextFunction): Pr
 
     sendSuccess(res, {
       id: user.id,
-      phone: user.phone,
+      phone: (user as Record<string, unknown>).phone ?? null,
       email: user.email,
       profile: user.profile,
       customer,

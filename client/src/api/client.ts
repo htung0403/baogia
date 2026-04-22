@@ -295,3 +295,53 @@ export const financialApi = {
     api.get('/analytics/kpis'),
 };
 
+// --- Profiles (staff dropdowns) ---
+export const profilesApi = {
+  list: (params?: { role?: string }) =>
+    api.get('/profiles', { params }),
+};
+
+// --- Pipeline ---
+export const pipelineApi = {
+  // Tab 2 — Board
+  getBoard: () =>
+    api.get('/pipeline/board'),
+
+  assignStage: (customerId: string, stageId: string) =>
+    api.post(`/pipeline/customers/${customerId}/stage`, { stage_id: stageId }),
+
+  // Tab 3 — Funnel
+  getFunnel: (params?: {
+    assigned_to?: string;
+    period?: 'this_month' | 'last_month' | 'all';
+    all_kh?: boolean;
+  }) =>
+    api.get('/pipeline/funnel', { params }),
+
+  // Activities
+  createActivity: (data: {
+    customer_id: string; activity_type: string; title: string;
+    description?: string | null; assigned_to?: string | null; related_project?: string | null;
+  }) =>
+    api.post('/pipeline/activities', data),
+
+  // Quotes
+  listQuotes: (params?: { customer_id?: string }) =>
+    api.get('/pipeline/quotes', { params }),
+
+  createQuote: (data: {
+    customer_id: string; title?: string | null; amount?: number; notes?: string | null;
+  }) =>
+    api.post('/pipeline/quotes', data),
+
+  // Contracts
+  listContracts: (params?: { customer_id?: string }) =>
+    api.get('/pipeline/contracts', { params }),
+
+  createContract: (data: {
+    customer_id: string; title?: string | null; amount?: number;
+    start_date?: string | null; end_date?: string | null; notes?: string | null;
+  }) =>
+    api.post('/pipeline/contracts', data),
+};
+

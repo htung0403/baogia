@@ -18,7 +18,7 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
 
     let query = supabaseAdmin
       .from('customers')
-      .select('*, profiles:profile_id(display_name, email:id, role, is_active)', { count: 'exact' });
+      .select('*, profiles:profile_id(display_name, role, is_active), assigned_profile:assigned_to(display_name)', { count: 'exact' });
 
     if (!include_deleted) {
       query = query.is('deleted_at', null);
@@ -28,6 +28,16 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
       query = query.or(
         `customer_name.ilike.%${search}%,phone_number.ilike.%${search}%,email.ilike.%${search}%`
       );
+    }
+
+    const assignedTo = req.query.assigned_to as string | undefined;
+    if (assignedTo) {
+      query = query.eq('assigned_to', assignedTo);
+    }
+
+    const source = req.query.source as string | undefined;
+    if (source) {
+      query = query.eq('source', source);
     }
 
     query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);

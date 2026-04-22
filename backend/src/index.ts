@@ -14,6 +14,8 @@ import uploadRoutes from './routes/upload.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import financialRoutes from './routes/financial.routes.js';
+import profileRoutes from './routes/profile.routes.js';
+import pipelineRoutes from './routes/pipeline.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/index.js';
 
 const app = express();
@@ -82,6 +84,8 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/analytics', financialRoutes);
+app.use('/api/profiles', profileRoutes);
+app.use('/api/pipeline', pipelineRoutes);
 
 // ============================================================
 // ERROR HANDLING

@@ -54,6 +54,8 @@ export const updateCustomerSchema = z.object({
   email: z.string().email().nullable().optional(),
   address: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  assigned_to: z.string().uuid().optional().nullable(),
+  source: z.string().optional().nullable(),
 });
 
 // ============================================================
@@ -170,9 +172,58 @@ export const createPaymentSchema = z.object({
 });
 
 // ============================================================
+// PIPELINE
+// ============================================================
+
+// Stage assignment
+export const assignStageSchema = z.object({
+  stage_id: z.string().uuid('stage_id phải là UUID hợp lệ'),
+});
+
+// Funnel query params
+export const funnelQuerySchema = z.object({
+  assigned_to: z.string().uuid().optional(),
+  period: z.enum(['this_month', 'last_month', 'all']).default('this_month'),
+  all_kh: z.string().optional().transform(v => v === 'true'),
+});
+
+// Create activity
+export const createActivitySchema = z.object({
+  customer_id:     z.string().uuid(),
+  activity_type:   z.enum(['email','sms','zns','call','task','meeting','note','trao_doi']),
+  title:           z.string().min(1),
+  description:     z.string().optional().nullable(),
+  assigned_to:     z.string().uuid().optional().nullable(),
+  related_project: z.string().optional().nullable(),
+});
+
+// Create quote
+export const createQuoteSchema = z.object({
+  customer_id: z.string().uuid(),
+  title:       z.string().optional().nullable(),
+  amount:      z.number().min(0).default(0),
+  notes:       z.string().optional().nullable(),
+});
+
+// Create contract
+export const createContractSchema = z.object({
+  customer_id: z.string().uuid(),
+  title:       z.string().optional().nullable(),
+  amount:      z.number().min(0).default(0),
+  start_date:  z.string().optional().nullable(),
+  end_date:    z.string().optional().nullable(),
+  notes:       z.string().optional().nullable(),
+});
+
+// ============================================================
 // Type exports (orders + payments)
 // ============================================================
 export type OrderItemInput   = z.infer<typeof orderItemInputSchema>;
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
+export type AssignStageInput = z.infer<typeof assignStageSchema>;
+export type FunnelQueryInput = z.infer<typeof funnelQuerySchema>;
+export type CreateActivityInput = z.infer<typeof createActivitySchema>;
+export type CreateQuoteInput = z.infer<typeof createQuoteSchema>;
+export type CreateContractInput = z.infer<typeof createContractSchema>;
