@@ -15,10 +15,11 @@ import {
   ChevronRight,
   X,
   Building2,
-  ExternalLink,
   Filter,
   Download,
+  MessageSquare,
 } from 'lucide-react';
+import TiptapEditor from '@/components/ui/TiptapEditor';
 
 // ============================================================
 // Color maps: MUST be static objects (not dynamic strings)
@@ -50,6 +51,7 @@ export default function CustomersPage() {
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [quickExchangeCustomer, setQuickExchangeCustomer] = useState<Customer | null>(null);
 
   // Staff list for assigned_to filter (shared cache with Tab 3)
   const { data: staffRes } = useQuery({
@@ -180,6 +182,7 @@ export default function CustomersPage() {
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Địa chỉ</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Người phụ trách</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Chăm sóc cuối</th>
+                    <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Trao đổi gần nhất</th>
                     <th className="text-center py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Tài khoản</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ngày tạo</th>
                     <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24"></th>
@@ -189,14 +192,14 @@ export default function CustomersPage() {
                   {isLoading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
-                        <td colSpan={8} className="py-4 px-4">
+                        <td colSpan={9} className="py-4 px-4">
                           <div className="h-6 bg-slate-50 animate-pulse rounded-lg" />
                         </td>
                       </tr>
                     ))
                   ) : customers.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-12 text-[14px] text-slate-400">
+                      <td colSpan={9} className="text-center py-12 text-[14px] text-slate-400">
                         Không tìm thấy khách hàng nào
                       </td>
                     </tr>
@@ -218,6 +221,11 @@ export default function CustomersPage() {
                         <td className="py-4 px-4 text-[12px] text-slate-400 tabular-nums">
                           {customer.last_activity_at ? formatDate(customer.last_activity_at) : '—'}
                         </td>
+                        <td className="py-4 px-4 text-[12px] text-slate-500 max-w-[200px]">
+                          <div className="line-clamp-2" title={customer.latest_trao_doi?.replace(/<[^>]+>/g, '') || ''}>
+                            {customer.latest_trao_doi ? customer.latest_trao_doi.replace(/<[^>]+>/g, '') : '—'}
+                          </div>
+                        </td>
                         <td className="py-4 px-4 text-center">
                           {customer.profile_id ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -236,11 +244,11 @@ export default function CustomersPage() {
                         <td className="py-4 px-4 text-right">
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
-                              onClick={(e) => { e.stopPropagation(); navigate(`/admin/customers/${customer.id}`); }}
+                              onClick={(e) => { e.stopPropagation(); setQuickExchangeCustomer(customer); }}
                               className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
-                              title="Xem chi tiết"
+                              title="Trao đổi nhanh"
                             >
-                              <ExternalLink className="w-4 h-4" />
+                              <MessageSquare className="w-4 h-4" />
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); setEditingCustomer(customer); setShowForm(true); }}
@@ -306,6 +314,13 @@ export default function CustomersPage() {
           onSave={(data) => saveMutation.mutate({ id: editingCustomer?.id, body: data })}
           onClose={() => { setShowForm(false); setEditingCustomer(null); }}
           isLoading={saveMutation.isPending}
+        />
+      )}
+
+      {quickExchangeCustomer && (
+        <QuickExchangeModal
+          customer={quickExchangeCustomer}
+          onClose={() => setQuickExchangeCustomer(null)}
         />
       )}
     </div>
@@ -1013,6 +1028,100 @@ function CustomerFormModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Quick Exchange Modal
+// ============================================================
+function QuickExchangeModal({
+  customer,
+  onClose,
+}: {
+  customer: Customer;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [content, setContent] = useState('');
+
+  const createActivity = useMutation({
+    mutationFn: (htmlContent: string) =>
+      pipelineApi.createActivity({
+        customer_id: customer.id,
+        activity_type: 'trao_doi',
+        title: 'Trao đổi',
+        description: htmlContent,
+      }),
+    onSuccess: () => {
+      setContent('');
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['activities', customer.id] });
+      toast.success('Đã gửi trao đổi nhanh');
+      onClose();
+    },
+    onError: (error: any) => {
+      toast.error('Không thể gửi trao đổi', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!content.trim() || content === '<p></p>') return;
+    createActivity.mutate(content);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-card border rounded-lg shadow-lg w-full max-w-2xl mx-4">
+        <div className="flex items-center justify-between px-5 py-3 border-b bg-slate-50/50">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+              <MessageSquare className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-[14px] font-bold text-slate-800">
+                Trao đổi nhanh
+              </h2>
+              <p className="text-[12px] text-slate-500">
+                KH: {customer.customer_name}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md cursor-pointer transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="border border-slate-200 rounded-xl overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+            <TiptapEditor 
+              content={content} 
+              onChange={setContent} 
+              placeholder="Nhập nội dung trao đổi..."
+              className="border-none"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-9 px-4 text-[13px] font-medium border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={createActivity.isPending || !content.trim() || content === '<p></p>'}
+              className="h-9 px-5 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm"
+            >
+              {createActivity.isPending ? 'Đang gửi...' : 'Gửi trao đổi'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
