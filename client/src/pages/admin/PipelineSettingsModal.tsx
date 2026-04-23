@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { pipelineApi } from '@/api/client';
 import { X, Plus, Edit2, Trash2, GripVertical } from 'lucide-react';
@@ -255,7 +256,7 @@ export default function PipelineSettingsModal({ onClose }: { onClose: () => void
     setDraggingStage(null);
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
@@ -420,7 +421,8 @@ export default function PipelineSettingsModal({ onClose }: { onClose: () => void
           onClose={() => setMessageDialog(null)}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -437,7 +439,7 @@ function ConfirmDeleteDialog({
   onConfirm: () => void;
   isLoading?: boolean;
 }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="border-b border-slate-100 px-5 py-4">
@@ -464,7 +466,8 @@ function ConfirmDeleteDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -477,7 +480,7 @@ function MessageDialog({
   message: string;
   onClose: () => void;
 }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="border-b border-slate-100 px-5 py-4">
@@ -496,7 +499,8 @@ function MessageDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -528,7 +532,7 @@ function ColumnFormModal({
     onError: (err: any) => onErrorMessage(err?.response?.data?.message || 'Lỗi khi lưu cột'),
   });
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20">
       <div className="bg-white border rounded-xl shadow-lg w-full max-w-sm mx-4 p-5">
         <h3 className="text-[15px] font-bold text-slate-800 mb-4">{column.id ? 'Sửa cột' : 'Thêm cột mới'}</h3>
@@ -571,7 +575,8 @@ function ColumnFormModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -605,7 +610,7 @@ function StageFormModal({
     onError: (err: any) => onErrorMessage(err?.response?.data?.message || 'Lỗi khi lưu stage'),
   });
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20">
       <div className="bg-white border rounded-xl shadow-lg w-full max-w-sm mx-4 p-5">
         <h3 className="text-[15px] font-bold text-slate-800 mb-4">{stage.id ? 'Sửa stage' : 'Thêm stage mới'}</h3>
@@ -658,6 +663,7 @@ function StageFormModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

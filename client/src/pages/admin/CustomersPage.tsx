@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { customerApi, profilesApi, pipelineApi } from '@/api/client';
@@ -905,8 +906,8 @@ function CustomerFormModal({
     onSave(data);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
       <div className="bg-card border rounded-lg shadow-lg w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-3 border-b">
           <h2 className="text-[14px] font-semibold">
@@ -1029,7 +1030,8 @@ function CustomerFormModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1073,8 +1075,8 @@ function QuickExchangeModal({
     createActivity.mutate(content);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
       <div className="bg-card border rounded-lg shadow-lg w-full max-w-2xl mx-4">
         <div className="flex items-center justify-between px-5 py-3 border-b bg-slate-50/50">
           <div className="flex items-center gap-2">
@@ -1123,6 +1125,7 @@ function QuickExchangeModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

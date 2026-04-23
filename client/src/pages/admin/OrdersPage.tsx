@@ -334,7 +334,7 @@ function OrderDetailPanel({ orderId, onClose }: { orderId: string; onClose: () =
     },
   });
 
-  return (
+  return createPortal(
     <div className="fixed top-0 left-0 right-0 bottom-0 z-[999] flex justify-end">
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-card border-l border-border shadow-2xl flex flex-col h-full overflow-hidden animate-in fade-in slide-in-from-right duration-200">
@@ -468,7 +468,8 @@ function OrderDetailPanel({ orderId, onClose }: { orderId: string; onClose: () =
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

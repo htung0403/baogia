@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { priceListApi } from '@/api/client';
@@ -242,7 +243,7 @@ export default function PriceListsPage() {
       )}
 
       {/* Create Form Modal */}
-      {showCreateForm && (
+      {showCreateForm && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-card border rounded-lg shadow-lg w-full max-w-md mx-4 p-5">
             <div className="flex items-center justify-between mb-4">
@@ -298,7 +299,8 @@ export default function PriceListsPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

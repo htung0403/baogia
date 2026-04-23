@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi, profilesApi } from '@/api/client';
 import { useToast } from '@/components/ui/toast';
@@ -212,7 +213,7 @@ function CreateEmployeeModal({ onClose, onCreated }: { onClose: () => void; onCr
     createMutation.mutate();
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
@@ -277,6 +278,7 @@ function CreateEmployeeModal({ onClose, onCreated }: { onClose: () => void; onCr
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

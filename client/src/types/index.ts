@@ -40,6 +40,7 @@ export interface Customer {
   facebook: string | null;
   assigned_profile?: { display_name: string } | null;
   last_activity_at?: string | null;
+  latest_trao_doi?: string | null;
 }
 
 export interface ProductCategory {

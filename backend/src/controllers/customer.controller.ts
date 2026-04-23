@@ -48,11 +48,12 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
 
     const customerIds = (data ?? []).map((c: any) => c.id);
     let lastActivityMap: Record<string, string | null> = {};
+    let lastTraoDoiMap: Record<string, string | null> = {};
     
     if (customerIds.length > 0) {
       const { data: actData } = await supabaseAdmin
         .from('customer_activities')
-        .select('customer_id, created_at')
+        .select('customer_id, created_at, activity_type, description')
         .in('customer_id', customerIds)
         .order('created_at', { ascending: false });
     
@@ -60,12 +61,16 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
         if (!lastActivityMap[act.customer_id]) {
           lastActivityMap[act.customer_id] = act.created_at;
         }
+        if (!lastTraoDoiMap[act.customer_id] && act.activity_type === 'trao_doi' && act.description) {
+          lastTraoDoiMap[act.customer_id] = act.description;
+        }
       }
     }
     
     const enriched = (data ?? []).map((c: any) => ({
       ...c,
       last_activity_at: lastActivityMap[c.id] ?? null,
+      latest_trao_doi: lastTraoDoiMap[c.id] ?? null,
     }));
 
     sendSuccess(res, enriched, undefined, 200, {

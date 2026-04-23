@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { priceListApi, productApi, customerApi } from '@/api/client';
@@ -550,7 +551,7 @@ function ProductPickerModal({ onAdd, onClose, excludeIds }: { onAdd: (products: 
   const products: Product[] = (res?.data?.data ?? []).filter((p: Product) => !excludeIds.includes(p.id));
   const toggleSelect = (p: Product) => setSelected(prev => prev.find(x => x.id === p.id) ? prev.filter(x => x.id !== p.id) : [...prev, p]);
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-card border rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-3 border-b">
@@ -583,7 +584,8 @@ function ProductPickerModal({ onAdd, onClose, excludeIds }: { onAdd: (products: 
           <button onClick={() => onAdd(selected)} disabled={selected.length === 0} className="h-8 px-4 text-[12px] font-bold text-white bg-primary rounded hover:bg-primary/90 disabled:opacity-40 cursor-pointer">THÊM VÀO BẢNG GIÁ</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -592,7 +594,7 @@ function CustomerAssignModal({ currentCustomerIds, onAssign, onClose, isLoading 
   const { data: res } = useQuery({ queryKey: ['customers-assign'], queryFn: () => customerApi.list({ limit: 200 }), staleTime: 5 * 60 * 1000 });
   const customers = ((res?.data?.data ?? []) as any[]).filter(c => !currentCustomerIds.includes(c.id));
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-card border rounded-lg shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-3 border-b">
@@ -615,6 +617,7 @@ function CustomerAssignModal({ currentCustomerIds, onAssign, onClose, isLoading 
           <button onClick={() => onAssign(selected)} disabled={selected.length === 0 || isLoading} className="h-8 px-4 text-[12px] font-bold text-white bg-primary rounded hover:bg-primary/90 disabled:opacity-40 cursor-pointer">{isLoading ? 'ĐANG GÁN...' : `GÁN CHO ${selected.length} KHÁCH`}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
