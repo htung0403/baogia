@@ -46,7 +46,29 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
 
     if (error) throw ApiError.internal(error.message);
 
-    sendSuccess(res, data, undefined, 200, {
+    const customerIds = (data ?? []).map((c: any) => c.id);
+    let lastActivityMap: Record<string, string | null> = {};
+    
+    if (customerIds.length > 0) {
+      const { data: actData } = await supabaseAdmin
+        .from('customer_activities')
+        .select('customer_id, created_at')
+        .in('customer_id', customerIds)
+        .order('created_at', { ascending: false });
+    
+      for (const act of (actData ?? [])) {
+        if (!lastActivityMap[act.customer_id]) {
+          lastActivityMap[act.customer_id] = act.created_at;
+        }
+      }
+    }
+    
+    const enriched = (data ?? []).map((c: any) => ({
+      ...c,
+      last_activity_at: lastActivityMap[c.id] ?? null,
+    }));
+
+    sendSuccess(res, enriched, undefined, 200, {
       page,
       limit,
       total: count ?? 0,
@@ -333,6 +355,17 @@ export async function getCustomerStats(req: Request, res: Response, next: NextFu
       .eq('customer_id', id)
       .single();
 
+    // 8. Last activity date
+    const { data: lastActRow } = await supabaseAdmin
+      .from('customer_activities')
+      .select('created_at')
+      .eq('customer_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const lastActivityAt = lastActRow?.created_at ?? null;
+
     sendSuccess(res, {
       sessions: sessions ?? [],
       assigned_price_lists: assignments ?? [],
@@ -345,6 +378,7 @@ export async function getCustomerStats(req: Request, res: Response, next: NextFu
         total_debt: 0,
         total_paid: 0,
       },
+      last_activity_at: lastActivityAt,
     });
   } catch (error) {
     next(error);

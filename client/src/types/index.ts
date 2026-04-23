@@ -39,6 +39,7 @@ export interface Customer {
   skype: string | null;
   facebook: string | null;
   assigned_profile?: { display_name: string } | null;
+  last_activity_at?: string | null;
 }
 
 export interface ProductCategory {
@@ -367,6 +368,9 @@ export interface CustomerActivity {
   related_project: string | null;
   created_by: string;
   created_at: string;
+  scheduled_at: string | null;
+  status: 'pending' | 'done' | 'cancelled' | null;
+  profiles?: { display_name: string } | null;
 }
 
 export interface FunnelBySource  { source: string | null; count: number; pct: number; amount?: number; }

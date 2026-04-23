@@ -382,12 +382,19 @@ export async function createActivity(req: Request, res: Response, next: NextFunc
 export async function listActivities(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { customerId } = req.params;
+    const type = req.query.type as string | undefined;
     const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
 
-    const { data, error, count } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('customer_activities')
       .select('*, profiles:created_by(display_name, avatar_url)', { count: 'exact' })
-      .eq('customer_id', customerId)
+      .eq('customer_id', customerId);
+
+    if (type) {
+      query = query.eq('activity_type', type);
+    }
+
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -396,6 +403,29 @@ export async function listActivities(req: Request, res: Response, next: NextFunc
     sendSuccess(res, data ?? [], undefined, 200, {
       page, limit, total: count ?? 0, totalPages: Math.ceil((count ?? 0) / limit),
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateActivityStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['pending', 'done', 'cancelled'].includes(status)) {
+      throw ApiError.badRequest('Status không hợp lệ');
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('customer_activities')
+      .update({ status })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error || !data) throw ApiError.notFound('Không tìm thấy activity');
+    sendSuccess(res, data, 'Cập nhật trạng thái thành công');
   } catch (error) {
     next(error);
   }

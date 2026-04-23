@@ -1,11 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { customerApi, profilesApi, pipelineApi } from '@/api/client';
 import { formatDate, formatPhoneE164 } from '@/lib/utils';
-import type { Customer, BoardResponse, FunnelResponse, StaffProfile } from '@/types';
-import PipelineSettingsModal from './PipelineSettingsModal';
-import { useToast } from '@/components/ui/toast';
+import type { Customer, BoardResponse, FunnelResponse, StaffProfile, PipelineColumn } from '@/types';
 import {
   Plus,
   Search,
@@ -43,7 +41,6 @@ const BG_COLOR: Record<string, string> = {
 export default function CustomersPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion'>('list');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -76,13 +73,7 @@ export default function CustomersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => customerApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
-      toast.success('Đã xóa khách hàng');
-    },
-    onError: (error: any) => {
-      toast.error('Không thể xóa khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['customers'] }),
   });
 
   const saveMutation = useMutation({
@@ -92,10 +83,6 @@ export default function CustomersPage() {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setShowForm(false);
       setEditingCustomer(null);
-      toast.success('Lưu khách hàng thành công');
-    },
-    onError: (error: any) => {
-      toast.error('Không thể lưu khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
     },
   });
 
@@ -179,7 +166,6 @@ export default function CustomersPage() {
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Email</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Địa chỉ</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Người phụ trách</th>
-                    <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Chăm sóc cuối</th>
                     <th className="text-center py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Tài khoản</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ngày tạo</th>
                     <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24"></th>
@@ -215,9 +201,6 @@ export default function CustomersPage() {
                         <td className="py-4 px-4 text-slate-500">{customer.email || '-'}</td>
                         <td className="py-4 px-4 text-slate-500">{customer.address || '-'}</td>
                         <td className="py-4 px-4 text-slate-500">{customer.assigned_profile?.display_name || '-'}</td>
-                        <td className="py-4 px-4 text-[12px] text-slate-400 tabular-nums">
-                          {customer.last_activity_at ? formatDate(customer.last_activity_at) : '—'}
-                        </td>
                         <td className="py-4 px-4 text-center">
                           {customer.profile_id ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -338,24 +321,9 @@ function ToggleSwitch({ label, checked, onChange }: {
 // Tab 2: Customer Journey (Hành trình khách hàng)
 // ============================================================
 function CustomerJourneyTab() {
-  const navigate = useNavigate();
   const [dndMode, setDndMode]     = useState(false);  // cosmetic only
   const [showAll, setShowAll]     = useState(true);   // cosmetic only
   const [showAllKH, setShowAllKH] = useState(false);  // cosmetic only
-  const [showPipelineSettings, setShowPipelineSettings] = useState(false);
-  const [draggingCustomer, setDraggingCustomer] = useState<{ customerId: string; fromStageId: string } | null>(null);
-  const toast = useToast();
-  
-  const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [selectedStage, setSelectedStage] = useState<string | null>(null);
-
-  const { data: allRes } = useQuery({
-    queryKey: ['customers-all'],
-    queryFn: () => customerApi.list({ page: 1, limit: 1000 }),
-    staleTime: 5 * 60 * 1000,
-  });
-  const allCustomers: Customer[] = allRes?.data?.data ?? [];
 
   const { data: boardRes, isLoading } = useQuery({
     queryKey: ['pipeline-board'],
@@ -363,119 +331,6 @@ function CustomerJourneyTab() {
     staleTime: 60_000,
   });
   const board: BoardResponse = boardRes?.data?.data ?? { columns: [], total_customers: 0 };
-
-  const assignMutation = useMutation({
-    mutationFn: (data: { customerId: string; stageId: string }) => 
-      pipelineApi.assignStage(data.customerId, data.stageId),
-    onMutate: async ({ customerId, stageId }) => {
-      await queryClient.cancelQueries({ queryKey: ['pipeline-board'] });
-      const previousBoard = queryClient.getQueryData(['pipeline-board']);
-
-      queryClient.setQueryData(['pipeline-board'], (old: any) => {
-        const oldColumns = old?.data?.data?.columns;
-        if (!Array.isArray(oldColumns)) return old;
-
-        let movedCustomer: any = null;
-
-        const columnsWithoutCustomer = oldColumns.map((col: any) => ({
-          ...col,
-          stages: (col.stages || []).map((stage: any) => {
-            const customers = stage.customers || [];
-            const existing = customers.find((c: any) => c.id === customerId);
-            if (existing) movedCustomer = existing;
-            const filtered = customers.filter((c: any) => c.id !== customerId);
-            return {
-              ...stage,
-              customers: filtered,
-              count: filtered.length,
-            };
-          }),
-        }));
-
-        if (!movedCustomer) return old;
-
-        const nextColumns = columnsWithoutCustomer.map((col: any) => ({
-          ...col,
-          stages: (col.stages || []).map((stage: any) => {
-            if (stage.id !== stageId) return stage;
-            const nextCustomers = [movedCustomer, ...(stage.customers || [])];
-            return {
-              ...stage,
-              customers: nextCustomers,
-              count: nextCustomers.length,
-            };
-          }),
-        }));
-
-        return {
-          ...old,
-          data: {
-            ...old.data,
-            data: {
-              ...old.data.data,
-              columns: nextColumns,
-            },
-          },
-        };
-      });
-
-      return { previousBoard };
-    },
-    onSuccess: () => {
-      toast.success('Chuyển trạng thái khách hàng thành công');
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.previousBoard) {
-        queryClient.setQueryData(['pipeline-board'], context.previousBoard);
-      }
-      toast.error('Không thể cập nhật stage khách hàng', 'Vui lòng thử lại');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
-    },
-  });
-
-  const handleCustomerDragStart = (customerId: string, fromStageId: string) => {
-    if (!dndMode) return;
-    setDraggingCustomer({ customerId, fromStageId });
-  };
-
-  const handleCustomerDropToStage = (toStageId: string) => {
-    if (!draggingCustomer) return;
-    if (draggingCustomer.fromStageId !== toStageId) {
-      assignMutation.mutate({ customerId: draggingCustomer.customerId, stageId: toStageId });
-    }
-    setDraggingCustomer(null);
-  };
-
-  const handleCustomerDragEnd = () => {
-    setDraggingCustomer(null);
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: (data: { body: Record<string, unknown> }) => customerApi.create(data.body),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
-      const newCustomerId = (res.data as any)?.data?.id;
-      if (newCustomerId && selectedStage) {
-        assignMutation.mutate({ customerId: newCustomerId, stageId: selectedStage });
-      }
-      setShowForm(false);
-      setSelectedStage(null);
-      toast.success('Tạo khách hàng thành công');
-    },
-    onError: (error: any) => {
-      toast.error('Không thể tạo khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
-    },
-  });
-
-  const assignedCustomerIds = new Set<string>();
-  board.columns.forEach(col => {
-    col.stages.forEach(stage => {
-      stage.customers?.forEach((c: any) => assignedCustomerIds.add(c.id));
-    });
-  });
-  const unassignedCustomers = allCustomers.filter(c => !assignedCustomerIds.has(c.id));
 
   return (
     <div className="space-y-3">
@@ -487,7 +342,7 @@ function CustomerJourneyTab() {
         <ToggleSwitch label="Tất cả KH" checked={showAllKH} onChange={setShowAllKH} />
         <div className="ml-auto flex items-center gap-2">
           <button
-            onClick={() => setShowPipelineSettings(true)}
+            onClick={() => alert('Tính năng đang phát triển')}
             className="h-8 px-3 text-[12px] font-medium border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
           >
             Sửa tiện ích
@@ -499,189 +354,42 @@ function CustomerJourneyTab() {
       {isLoading ? (
         <div className="flex gap-3 overflow-x-auto pb-4 min-w-[1000px] w-full">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="shrink-0 w-[300px] h-[500px] bg-slate-100 animate-pulse rounded-xl" />
+            <div key={i} className="flex-1 min-w-[120px] max-w-sm h-48 bg-slate-100 animate-pulse rounded-xl" />
           ))}
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <div className="flex gap-4 pb-4 items-start w-max">
-            {board.columns.map(col => (
-              <div key={col.id} className="flex flex-col gap-3 min-w-[300px] w-[300px] shrink-0">
-                <div className="text-[14px] font-bold text-slate-700 px-1 border-b border-slate-200 pb-2">
-                  {col.name}
-                </div>
-                <div className="flex flex-col gap-4">
-                  {col.stages.map(stage => (
-                    <KanbanStageBlock 
-                      key={stage.id} 
-                      stage={stage}
-                      allCustomers={unassignedCustomers}
-                      dndEnabled={dndMode}
-                      onAssign={(cId, sId) => assignMutation.mutate({ customerId: cId, stageId: sId })}
-                      onCreateNew={(sId) => { setSelectedStage(sId); setShowForm(true); }}
-                      onCustomerClick={(id) => navigate(`/admin/customers/${id}`)}
-                      onCustomerDragStart={handleCustomerDragStart}
-                      onCustomerDropToStage={handleCustomerDropToStage}
-                      onCustomerDragEnd={handleCustomerDragEnd}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="flex gap-3 min-w-[1000px] w-full pb-4">
+            {board.columns.map(col => <KanbanColumn key={col.id} column={col} />)}
           </div>
         </div>
-      )}
-      
-      {showForm && (
-        <CustomerFormModal
-          customer={null}
-          onSave={(data) => saveMutation.mutate({ body: data })}
-          onClose={() => { setShowForm(false); setSelectedStage(null); }}
-          isLoading={saveMutation.isPending}
-        />
-      )}
-
-      {showPipelineSettings && (
-        <PipelineSettingsModal onClose={() => setShowPipelineSettings(false)} />
       )}
     </div>
   );
 }
 
-function KanbanStageBlock({ 
-  stage, 
-  allCustomers, 
-  dndEnabled,
-  onAssign, 
-  onCreateNew,
-  onCustomerClick,
-  onCustomerDragStart,
-  onCustomerDropToStage,
-  onCustomerDragEnd,
-}: { 
-  stage: any, 
-  allCustomers: Customer[], 
-  dndEnabled: boolean,
-  onAssign: (cId: string, sId: string) => void, 
-  onCreateNew: (sId: string) => void,
-  onCustomerClick: (id: string) => void,
-  onCustomerDragStart: (customerId: string, fromStageId: string) => void,
-  onCustomerDropToStage: (toStageId: string) => void,
-  onCustomerDragEnd: () => void,
-}) {
-  const [isDropOver, setIsDropOver] = useState(false);
-
+function KanbanColumn({ column }: { column: PipelineColumn }) {
   return (
-    <div className="flex flex-col gap-2 w-full shrink-0">
-      <div className="flex flex-col bg-slate-100/50 border border-slate-200 rounded-xl">
-        <div className={`${BG_COLOR[stage.color] ?? 'bg-slate-50'} border-t-4 ${BORDER_COLOR[stage.color] ?? 'border-slate-400'} p-3 border-b border-slate-200 rounded-t-xl`}>
-          <div className="flex justify-between items-start">
-            <p className="text-[13px] font-bold text-slate-800 leading-tight">{stage.name}</p>
-            <span className="text-[11px] font-bold bg-white px-2 py-0.5 rounded-full text-slate-600 shadow-sm">
-              {stage.count}
-            </span>
-          </div>
-          {stage.description && (
-            <p className="text-[11px] text-slate-500 mt-1 leading-tight line-clamp-2">{stage.description}</p>
-          )}
-        </div>
-        
-        <div
-          className={`flex flex-col gap-2 p-2 min-h-[100px] transition-colors ${isDropOver ? 'bg-indigo-50/70' : ''}`}
-          onDragOver={(e) => {
-            if (!dndEnabled) return;
-            e.preventDefault();
-            setIsDropOver(true);
-          }}
-          onDragLeave={() => {
-            if (!dndEnabled) return;
-            setIsDropOver(false);
-          }}
-          onDrop={(e) => {
-            if (!dndEnabled) return;
-            e.preventDefault();
-            setIsDropOver(false);
-            onCustomerDropToStage(stage.id);
-          }}
-        >
-          {stage.customers && stage.customers.length > 0 && stage.customers.map((c: any) => (
-            <div 
-              key={c.id} 
-              draggable={dndEnabled}
-              onDragStart={() => onCustomerDragStart(c.id, stage.id)}
-              onDragEnd={onCustomerDragEnd}
-              onClick={() => onCustomerClick(c.id)}
-              className={`bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm flex flex-col gap-0.5 hover:border-indigo-300 hover:shadow transition-all ${dndEnabled ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
-            >
-              <span className="text-[13px] font-bold text-slate-800">{c.customer_name}</span>
-              {c.phone_number && <span className="text-[11px] text-slate-500">{c.phone_number}</span>}
-              {c.email && <span className="text-[11px] text-slate-500">{c.email}</span>}
-            </div>
-          ))}
-          
-          <StageAddButton 
-            stageId={stage.id}
-            allCustomers={allCustomers}
-            onAssign={onAssign}
-            onCreateNew={onCreateNew}
-          />
-        </div>
+    <div className="flex flex-col gap-2 flex-1 min-w-[120px] max-w-sm">
+      <div className="text-[12px] font-bold text-slate-600 px-1 pb-1 border-b border-slate-200">
+        {column.name}
       </div>
-    </div>
-  );
-}
-
-function StageAddButton({ 
-  stageId, 
-  allCustomers, 
-  onAssign, 
-  onCreateNew 
-}: { 
-  stageId: string, 
-  allCustomers: Customer[], 
-  onAssign: (cId: string, sId: string) => void, 
-  onCreateNew: (sId: string) => void 
-}) {
-  const [open, setOpen] = useState(false);
-  
-  return (
-    <div className="relative">
-      <button 
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-center h-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-dashed border-slate-300 text-xl transition-colors cursor-pointer"
-      >
+      {column.stages.map(stage => (
+        <div key={stage.id}
+          className={`${BG_COLOR[stage.color] ?? 'bg-slate-50'} border-l-4 ${BORDER_COLOR[stage.color] ?? 'border-slate-400'} rounded-lg p-3`}>
+          <p className="text-[12px] font-bold text-slate-800 leading-tight">{stage.name}</p>
+          {stage.description && (
+            <p className="text-[11px] text-slate-500 mt-0.5 leading-tight line-clamp-2">{stage.description}</p>
+          )}
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-[20px] font-bold text-slate-900">{stage.count}</span>
+            <span className="text-[11px] text-slate-400">({stage.percent.toFixed(2)}%)</span>
+          </div>
+        </div>
+      ))}
+      <button className="flex items-center justify-center h-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-dashed border-slate-300 text-xl transition-colors cursor-pointer">
         +
       </button>
-      
-      {open && (
-        <div className="absolute top-9 left-0 w-full z-50 bg-white border border-slate-200 rounded-lg shadow-lg p-2 flex flex-col gap-2">
-          <button 
-            onClick={() => { setOpen(false); onCreateNew(stageId); }}
-            className="text-left text-[13px] px-2 py-1.5 hover:bg-slate-50 rounded text-blue-600 font-medium cursor-pointer"
-          >
-            + Tạo mới khách hàng
-          </button>
-          
-          <div className="h-px bg-slate-100 my-1" />
-          
-          <select 
-            className="w-full border border-slate-200 rounded p-1.5 text-[13px] text-slate-700 outline-none cursor-pointer bg-white"
-            onChange={(e) => {
-              if (e.target.value) {
-                onAssign(e.target.value, stageId);
-                setOpen(false);
-                e.target.value = '';
-              }
-            }}
-            defaultValue=""
-          >
-            <option value="" disabled>Chọn KH hiện có...</option>
-            {allCustomers.map(c => (
-              <option key={c.id} value={c.id}>{c.customer_name}</option>
-            ))}
-          </select>
-        </div>
-      )}
     </div>
   );
 }
@@ -852,6 +560,9 @@ function CustomerFormModal({
     email: customer?.email ?? '',
     address: customer?.address ?? '',
     notes: customer?.notes ?? '',
+    customer_group: customer?.customer_group ?? '',
+    facebook: customer?.facebook ?? '',
+    skype: customer?.skype ?? '',
     create_account: false,
     account_phone: '',
     account_password: '',
@@ -879,6 +590,9 @@ function CustomerFormModal({
       email: formData.email || null,
       address: formData.address || null,
       notes: formData.notes || null,
+      customer_group: formData.customer_group || null,
+      facebook: formData.facebook || null,
+      skype: formData.skype || null,
     };
 
     if (!isEdit && formData.create_account) {
@@ -943,6 +657,40 @@ function CustomerFormModal({
               onChange={(e) => updateField('address', e.target.value)}
               className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[13px] font-medium">Nhóm khách hàng</label>
+            <input
+              type="text"
+              value={formData.customer_group}
+              onChange={(e) => updateField('customer_group', e.target.value)}
+              placeholder="VIP, Đại lý, Bán lẻ..."
+              className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Facebook</label>
+              <input
+                type="text"
+                value={formData.facebook}
+                onChange={(e) => updateField('facebook', e.target.value)}
+                placeholder="facebook.com/..."
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Skype</label>
+              <input
+                type="text"
+                value={formData.skype}
+                onChange={(e) => updateField('skype', e.target.value)}
+                placeholder="Skype ID..."
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">

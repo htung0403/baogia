@@ -3,7 +3,8 @@ import {
   getBoardData, assignCustomerToStage, getFunnelData,
   createActivity, listActivities, listQuotes, createQuote, listContracts, createContract,
   createPipelineColumn, updatePipelineColumn, deletePipelineColumn,
-  createPipelineStage, updatePipelineStage, deletePipelineStage
+  createPipelineStage, updatePipelineStage, deletePipelineStage,
+  updateActivityStatus
 } from '../controllers/pipeline.controller.js';
 import { authenticate, requireAdminOrStaff } from '../middleware/index.js';
 
@@ -15,6 +16,7 @@ router.post('/customers/:customerId/stage',   assignCustomerToStage);
 router.get('/funnel',                         getFunnelData);
 router.post('/activities',                    createActivity);
 router.get('/activities/:customerId',         listActivities);
+router.patch('/activities/:id/status',        updateActivityStatus);
 router.get('/quotes',                         listQuotes);
 router.post('/quotes',                        createQuote);
 router.get('/contracts',                      listContracts);

@@ -327,11 +327,30 @@ export const pipelineApi = {
   listActivities: (customerId: string) =>
     api.get(`/pipeline/activities/${customerId}`),
 
+  listAppointments: (customerId: string) =>
+    api.get(`/pipeline/activities/${customerId}`, { params: { type: 'meeting' } }),
+
   createActivity: (data: {
     customer_id: string; activity_type: string; title: string;
     description?: string | null; assigned_to?: string | null; related_project?: string | null;
   }) =>
     api.post('/pipeline/activities', data),
+
+  createAppointment: (data: {
+    customer_id: string;
+    title: string;
+    description?: string | null;
+    scheduled_at: string;
+    status?: 'pending' | 'done' | 'cancelled';
+    assigned_to?: string | null;
+  }) =>
+    api.post('/pipeline/activities', {
+      ...data,
+      activity_type: 'meeting',
+    }),
+
+  updateAppointmentStatus: (activityId: string, status: 'pending' | 'done' | 'cancelled') =>
+    api.patch(`/pipeline/activities/${activityId}/status`, { status }),
 
   // Quotes
   listQuotes: (params?: { customer_id?: string }) =>

@@ -242,6 +242,8 @@ export const createActivitySchema = z.object({
   description:     z.string().optional().nullable(),
   assigned_to:     z.string().uuid().optional().nullable(),
   related_project: z.string().optional().nullable(),
+  scheduled_at:    z.string().datetime({ offset: true }).optional().nullable(),
+  status:          z.enum(['pending', 'done', 'cancelled']).optional().nullable(),
 });
 
 // Create quote

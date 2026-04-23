@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { customerApi, profilesApi, pipelineApi } from '@/api/client';
 import { formatDate, formatDuration, formatCurrency } from '@/lib/utils';
-import type { Customer } from '@/types';
+import type { Customer, CustomerActivity } from '@/types';
 import { CrmStatCard } from '@/components/ui/CrmStatCard';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -418,6 +418,12 @@ export default function CustomerDetailPage() {
             <span className="text-slate-500">Lần cuối mua</span>
             <span className="font-medium text-slate-700">{orders.length > 0 ? formatDate(orders[0].created_at) : '—'}</span>
           </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-slate-500">Chăm sóc cuối</span>
+            <span className="font-medium text-slate-700">
+              {stats?.last_activity_at ? formatDate(stats.last_activity_at) : '—'}
+            </span>
+          </div>
         </div>
 
         {/* Stage Transition History */}
@@ -479,7 +485,8 @@ export default function CustomerDetailPage() {
             </div>
           )}
           {activeTab === 'lich-su-trang-thai' && <TabStageHistory history={stageHistory} />}
-          {['kh-phan-hoi', 'lich-hen', 'co-hoi', 'lich-di-tuyen', 'automation', 'gioi-thieu', 'ticket'].includes(activeTab) && (
+          {activeTab === 'lich-hen' && <TabLichHen customerId={customer.id} />}
+          {['kh-phan-hoi', 'co-hoi', 'lich-di-tuyen', 'automation', 'gioi-thieu', 'ticket'].includes(activeTab) && (
             <TabPlaceholder id={activeTab} />
           )}
         </div>
@@ -1024,6 +1031,235 @@ function TabPayments({ payments }: { payments: any[] }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Tab: Lịch hẹn
+// ──────────────────────────────────────────────
+function TabLichHen({ customerId }: { customerId: string }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const { data: profilesRes } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: () => profilesApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const profiles = profilesRes?.data?.data || [];
+
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    scheduled_at: '',
+    assigned_to: '',
+  });
+
+  const { data: apptRes, isLoading } = useQuery({
+    queryKey: ['appointments', customerId],
+    queryFn: () => pipelineApi.listAppointments(customerId),
+    enabled: !!customerId,
+  });
+  const appointments: CustomerActivity[] = apptRes?.data?.data || [];
+
+  const upcoming = appointments.filter(a => a.status !== 'done' && a.status !== 'cancelled');
+  const past = appointments.filter(a => a.status === 'done' || a.status === 'cancelled');
+
+  const createMutation = useMutation({
+    mutationFn: () => pipelineApi.createAppointment({
+      customer_id: customerId,
+      title: formData.title,
+      description: formData.description || null,
+      scheduled_at: new Date(formData.scheduled_at).toISOString(),
+      status: 'pending',
+      assigned_to: formData.assigned_to || null,
+    }),
+    onSuccess: () => {
+      setShowForm(false);
+      setFormData({ title: '', description: '', scheduled_at: '', assigned_to: '' });
+      queryClient.invalidateQueries({ queryKey: ['appointments', customerId] });
+      toast.success('Đã tạo lịch hẹn');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể tạo lịch hẹn', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'pending' | 'done' | 'cancelled' }) =>
+      pipelineApi.updateAppointmentStatus(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments', customerId] });
+      toast.success('Đã cập nhật trạng thái');
+    },
+  });
+
+  const statusBadge = (status: string | null) => {
+    const map: Record<string, { label: string; className: string }> = {
+      pending: { label: 'Chờ diễn ra', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+      done:    { label: 'Đã xong',     className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+      cancelled: { label: 'Đã hủy',   className: 'bg-rose-100 text-rose-700 border-rose-200' },
+    };
+    const s = map[status ?? 'pending'] ?? map.pending;
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${s.className}`}>
+        {s.label}
+      </span>
+    );
+  };
+
+  const AppointmentCard = ({ appt }: { appt: CustomerActivity }) => (
+    <div className="border border-slate-200 rounded-xl p-4 bg-white hover:shadow-sm transition-shadow">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold text-slate-800">{appt.title}</p>
+          {appt.scheduled_at && (
+            <div className="flex items-center gap-1.5 mt-1 text-[12px] text-slate-500">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{formatDate(appt.scheduled_at)}</span>
+            </div>
+          )}
+          {appt.profiles?.display_name && (
+            <div className="flex items-center gap-1.5 mt-0.5 text-[12px] text-slate-400">
+              <User className="w-3.5 h-3.5" />
+              <span>{appt.profiles.display_name}</span>
+            </div>
+          )}
+          {appt.description && (
+            <p className="mt-2 text-[12px] text-slate-500 line-clamp-2">{appt.description}</p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {statusBadge(appt.status)}
+          {appt.status === 'pending' && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => statusMutation.mutate({ id: appt.id, status: 'done' })}
+                className="px-2 py-0.5 text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+              >
+                Xong
+              </button>
+              <button
+                onClick={() => statusMutation.mutate({ id: appt.id, status: 'cancelled' })}
+                className="px-2 py-0.5 text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[14px] font-bold text-slate-800">
+          Lịch hẹn ({appointments.length})
+        </h3>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+        >
+          <Clock className="w-3.5 h-3.5" />
+          {showForm ? 'Đóng' : 'Thêm lịch hẹn'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+          <h4 className="text-[13px] font-bold text-slate-700">Tạo lịch hẹn mới</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-1">
+              <label className="text-[12px] font-medium text-slate-600">Tiêu đề *</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={e => setFormData(p => ({ ...p, title: e.target.value }))}
+                placeholder="Ví dụ: Tư vấn sản phẩm lần 2..."
+                className="w-full h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[12px] font-medium text-slate-600">Ngày giờ hẹn *</label>
+              <input
+                type="datetime-local"
+                value={formData.scheduled_at}
+                onChange={e => setFormData(p => ({ ...p, scheduled_at: e.target.value }))}
+                className="w-full h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[12px] font-medium text-slate-600">Người phụ trách</label>
+              <select
+                value={formData.assigned_to}
+                onChange={e => setFormData(p => ({ ...p, assigned_to: e.target.value }))}
+                className="w-full h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">-- Chọn nhân viên --</option>
+                {profiles.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.display_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2 space-y-1">
+              <label className="text-[12px] font-medium text-slate-600">Ghi chú</label>
+              <textarea
+                value={formData.description}
+                onChange={e => setFormData(p => ({ ...p, description: e.target.value }))}
+                rows={2}
+                placeholder="Nội dung trao đổi, mục tiêu buổi hẹn..."
+                className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowForm(false)}
+              className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => createMutation.mutate()}
+              disabled={!formData.title || !formData.scheduled_at || createMutation.isPending}
+              className="h-8 px-4 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {createMutation.isPending ? 'Đang lưu...' : 'Tạo lịch hẹn'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="flex justify-center py-10">
+          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {!isLoading && appointments.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 bg-white border border-slate-200 rounded-xl">
+          <Calendar className="w-10 h-10 text-slate-300 mb-3" />
+          <p className="text-[14px] font-bold text-slate-500">Chưa có lịch hẹn nào</p>
+          <p className="text-[12px] text-slate-400 mt-1">Nhấn "Thêm lịch hẹn" để tạo lịch hẹn đầu tiên</p>
+        </div>
+      )}
+
+      {upcoming.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Sắp diễn ra ({upcoming.length})</p>
+          {upcoming.map(appt => <AppointmentCard key={appt.id} appt={appt} />)}
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-4">Đã qua ({past.length})</p>
+          {past.map(appt => <AppointmentCard key={appt.id} appt={appt} />)}
         </div>
       )}
     </div>
