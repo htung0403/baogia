@@ -6,6 +6,9 @@ import {
   createPipelineStage, updatePipelineStage, deletePipelineStage,
   updateActivityStatus
 } from '../controllers/pipeline.controller.js';
+import {
+  listCustomerCosts, createCustomerCost, updateCustomerCost, deleteCustomerCost, getCustomerCostSummary
+} from '../controllers/customer-cost.controller.js';
 import { authenticate, requireAdminOrStaff } from '../middleware/index.js';
 
 const router = Router();
@@ -29,5 +32,11 @@ router.delete('/columns/:id',                 deletePipelineColumn);
 router.post('/stages',                        createPipelineStage);
 router.put('/stages/:id',                     updatePipelineStage);
 router.delete('/stages/:id',                  deletePipelineStage);
+
+router.get('/costs',                          listCustomerCosts);
+router.get('/costs/:customerId/summary',      getCustomerCostSummary);
+router.post('/costs',                         createCustomerCost);
+router.put('/costs/:id',                      updateCustomerCost);
+router.delete('/costs/:id',                   deleteCustomerCost);
 
 export default router;

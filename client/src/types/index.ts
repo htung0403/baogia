@@ -426,3 +426,26 @@ export interface Contract {
   updated_at: string;
   deleted_at: string | null;
 }
+
+export type CustomerCostType = 'advertising' | 'consulting' | 'travel' | 'gift' | 'commission' | 'other';
+
+export interface CustomerCost {
+  id: string;
+  customer_id: string;
+  amount: number;
+  description: string;
+  cost_type: CustomerCostType;
+  cost_date: string;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  profiles?: { display_name: string } | null;
+}
+
+export interface CustomerCostSummary {
+  total_cost: number;
+  count: number;
+  by_type: Array<{ type: string; amount: number }>;
+}

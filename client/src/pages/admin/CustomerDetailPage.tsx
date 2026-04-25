@@ -40,8 +40,18 @@ import {
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { CustomerCost } from '@/types';
 
-type Tab = 'trao-doi' | 'kh-phan-hoi' | 'giao-dich' | 'lich-hen' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'ticket' | 'lich-su-trang-thai';
+const COST_TYPE_LABELS: Record<string, string> = {
+  advertising: 'Quảng cáo',
+  consulting: 'Tư vấn',
+  travel: 'Đi lại',
+  gift: 'Quà tặng',
+  commission: 'Hoa hồng',
+  other: 'Khác',
+};
+
+type Tab = 'trao-doi' | 'kh-phan-hoi' | 'giao-dich' | 'lich-hen' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'chi-phi' | 'lich-su-trang-thai';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -117,7 +127,7 @@ const TAB_LIST: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'lich-hen', label: 'Lịch hẹn', icon: Calendar },
   { id: 'co-hoi', label: 'Cơ hội', icon: Target },
   { id: 'gioi-thieu', label: 'Giới thiệu', icon: Share2 },
-  { id: 'ticket', label: 'Ticket', icon: TicketIcon },
+  { id: 'chi-phi', label: 'Chi phí', icon: CreditCard },
 ];
 
 // ──────────────────────────────────────────────
@@ -494,7 +504,8 @@ export default function CustomerDetailPage() {
           )}
           {activeTab === 'lich-su-trang-thai' && <TabStageHistory history={stageHistory} />}
           {activeTab === 'lich-hen' && <TabLichHen customerId={customer.id} />}
-          {['co-hoi', 'gioi-thieu', 'ticket'].includes(activeTab) && (
+          {activeTab === 'chi-phi' && <TabChiPhi customerId={customer.id} customerName={customer.customer_name} />}
+          {['co-hoi', 'gioi-thieu'].includes(activeTab) && (
             <TabPlaceholder id={activeTab} />
           )}
         </div>
@@ -719,6 +730,316 @@ export function TabViewHistory({
 // ──────────────────────────────────────────────
 // Tab: Placeholder
 // ──────────────────────────────────────────────
+function TabChiPhi({ customerId, customerName }: { customerId: string; customerName: string }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [showAddCost, setShowAddCost] = useState(false);
+  const [editingCost, setEditingCost] = useState<CustomerCost | null>(null);
+
+  const { data: costsRes, isLoading } = useQuery({
+    queryKey: ['customer-costs', customerId],
+    queryFn: () => pipelineApi.listCosts({ customer_id: customerId, limit: 500 }),
+    staleTime: 30_000,
+  });
+  const costs: CustomerCost[] = costsRes?.data?.data ?? [];
+
+  const totalCost = costs.reduce((sum, c) => sum + Number(c.amount), 0);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => pipelineApi.deleteCost(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-costs', customerId] });
+      toast.success('Đã xóa chi phí');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể xóa chi phí', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const handleDelete = (id: string) => {
+    if (confirm('Xóa chi phí này?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5 text-[13px] font-bold text-slate-700">
+          <CreditCard className="w-4 h-4" />
+          Chi phí của khách hàng
+        </div>
+        <div className="ml-auto">
+          <button
+            onClick={() => { setEditingCost(null); setShowAddCost(true); }}
+            className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Thêm chi phí
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng chi phí</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{totalCost.toLocaleString('vi-VN')} đ</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Số lượng</p>
+          <p className="text-2xl font-bold text-indigo-700 mt-1">{costs.length}</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b bg-slate-50/50">
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Mô tả</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Loại</th>
+                <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Số tiền</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ngày</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Người tạo</th>
+                <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={6} className="py-4 px-4">
+                      <div className="h-6 bg-slate-50 animate-pulse rounded-lg" />
+                    </td>
+                  </tr>
+                ))
+              ) : costs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-12 text-[14px] text-slate-400">
+                    Chưa có chi phí nào
+                  </td>
+                </tr>
+              ) : (
+                costs.map((cost) => (
+                  <tr key={cost.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="py-4 px-4 text-slate-700 max-w-[200px]">
+                      <div className="line-clamp-2">{cost.description}</div>
+                      {cost.notes && <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">{cost.notes}</div>}
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {COST_TYPE_LABELS[cost.cost_type] || cost.cost_type}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-right font-bold text-slate-900 tabular-nums">
+                      {Number(cost.amount).toLocaleString('vi-VN')} đ
+                    </td>
+                    <td className="py-4 px-4 text-[12px] text-slate-500 tabular-nums">
+                      {cost.cost_date ? new Date(cost.cost_date).toLocaleDateString('vi-VN') : '—'}
+                    </td>
+                    <td className="py-4 px-4 text-slate-500">
+                      {cost.profiles?.display_name || '—'}
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => { setEditingCost(cost); setShowAddCost(true); }}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                          title="Chỉnh sửa"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(cost.id)}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showAddCost && (
+        <AddCostModal
+          cost={editingCost}
+          customerId={customerId}
+          customerName={customerName}
+          onClose={() => { setShowAddCost(false); setEditingCost(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddCostModal({
+  cost,
+  customerId,
+  customerName,
+  onClose,
+}: {
+  cost: CustomerCost | null;
+  customerId: string;
+  customerName: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const isEdit = !!cost;
+
+  const [formData, setFormData] = useState({
+    amount: cost ? String(cost.amount) : '',
+    description: cost?.description ?? '',
+    cost_type: cost?.cost_type ?? 'other',
+    cost_date: cost?.cost_date?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+    notes: cost?.notes ?? '',
+  });
+
+  const updateField = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const data = {
+        customer_id: customerId,
+        amount: Number(formData.amount),
+        description: formData.description,
+        cost_type: formData.cost_type,
+        cost_date: formData.cost_date,
+        notes: formData.notes || null,
+      };
+      return isEdit
+        ? pipelineApi.updateCost(cost!.id, data)
+        : pipelineApi.createCost(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-costs', customerId] });
+      toast.success(isEdit ? 'Cập nhật chi phí thành công' : 'Thêm chi phí thành công');
+      onClose();
+    },
+    onError: (error: any) => {
+      toast.error('Không thể lưu chi phí', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.amount || !formData.description) return;
+    saveMutation.mutate();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50/50">
+          <h2 className="text-[14px] font-bold text-slate-800">
+            {isEdit ? 'Sửa chi phí' : 'Thêm chi phí mới'}
+          </h2>
+          <button onClick={onClose} className="h-8 px-3 text-[12px] font-bold border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
+            Đóng
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[13px] font-bold text-slate-700">Khách hàng</label>
+            <input
+              type="text"
+              value={customerName}
+              disabled
+              className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-100 text-slate-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-bold text-slate-700">Số tiền (đ) *</label>
+              <input
+                type="number"
+                value={formData.amount}
+                onChange={(e) => updateField('amount', e.target.value)}
+                required
+                min="1"
+                className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-bold text-slate-700">Loại chi phí</label>
+              <select
+                value={formData.cost_type}
+                onChange={(e) => updateField('cost_type', e.target.value)}
+                className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                {Object.entries(COST_TYPE_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[13px] font-bold text-slate-700">Mô tả *</label>
+            <input
+              type="text"
+              value={formData.description}
+              onChange={(e) => updateField('description', e.target.value)}
+              required
+              placeholder="Mô tả chi phí..."
+              className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-bold text-slate-700">Ngày chi phí</label>
+              <input
+                type="date"
+                value={formData.cost_date}
+                onChange={(e) => updateField('cost_date', e.target.value)}
+                className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-bold text-slate-700">Ghi chú thêm</label>
+              <input
+                type="text"
+                value={formData.notes}
+                onChange={(e) => updateField('notes', e.target.value)}
+                placeholder="Ghi chú..."
+                className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t bg-white">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-9 px-4 text-[13px] font-medium border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {saveMutation.isPending ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Thêm chi phí'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function TabPlaceholder({ id: _id }: { id: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200 rounded-xl shadow-sm">

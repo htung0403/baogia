@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { customerApi, profilesApi, pipelineApi } from '@/api/client';
+import { customerApi, profilesApi, pipelineApi, orderApi } from '@/api/client';
 import { formatDate, formatPhoneE164 } from '@/lib/utils';
-import type { Customer, BoardResponse, FunnelResponse, StaffProfile } from '@/types';
+import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, CustomerCostType, Order } from '@/types';
 import PipelineSettingsModal from './PipelineSettingsModal';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -14,11 +14,13 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   X,
   Building2,
   Filter,
   Download,
   MessageSquare,
+  DollarSign,
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
 import {
@@ -57,7 +59,7 @@ export default function CustomersPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const currentUser = useAuthStore((s) => s.user);
-  const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion' | 'reports'>('list');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState<string[]>([]);
@@ -65,10 +67,23 @@ export default function CustomersPage() {
   const [datePreset, setDatePreset] = useState<'all' | 'today' | '7d' | '30d' | 'this_month'>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<'assigned' | 'stage' | 'date' | null>(null);
+  const filterBarRef = useRef<HTMLDivElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [quickExchangeCustomer, setQuickExchangeCustomer] = useState<Customer | null>(null);
   const PAGE_SIZE = 20;
+
+  useEffect(() => {
+    if (!openFilterDropdown) return;
+    const handleClick = (e: MouseEvent) => {
+      if (filterBarRef.current && !filterBarRef.current.contains(e.target as Node)) {
+        setOpenFilterDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [openFilterDropdown]);
 
   // Staff list for assigned_to filter (shared cache with Tab 3)
   const { data: staffRes } = useQuery({
@@ -86,7 +101,7 @@ export default function CustomersPage() {
       limit: 1000,
     }),
     staleTime: 5 * 60 * 1000,
-    enabled: activeTab === 'list',
+    enabled: activeTab === 'list' || activeTab === 'reports',
   });
   const allCustomers: Customer[] = res?.data?.data ?? [];
 
@@ -211,7 +226,22 @@ export default function CustomersPage() {
   const saveMutation = useMutation({
     mutationFn: (data: { id?: string; body: Record<string, unknown> }) =>
       data.id ? customerApi.update(data.id, data.body) : customerApi.create(data.body),
-    onSuccess: () => {
+    onSuccess: async (res, variables) => {
+      const newCustomerId = (res.data as any)?.data?.id;
+      const body = variables.body;
+      if (!variables.id && newCustomerId && body.initial_cost && body.initial_cost_description) {
+        try {
+          await pipelineApi.createCost({
+            customer_id: newCustomerId,
+            amount: Number(body.initial_cost),
+            description: String(body.initial_cost_description),
+            cost_type: String(body.initial_cost_type || 'other'),
+          });
+          queryClient.invalidateQueries({ queryKey: ['customer-costs'] });
+        } catch {
+          toast.error('Tạo khách thành công nhưng không thể tạo chi phí ban đầu');
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ['customers-list-all'] });
       setShowForm(false);
       setEditingCustomer(null);
@@ -234,7 +264,7 @@ export default function CustomersPage() {
 
       {/* Tab Bar — same pattern as AnalyticsPage.tsx */}
       <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
-        {(['list', 'journey', 'conversion'] as const).map(tab => (
+        {(['list', 'journey', 'conversion', 'reports'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-[13px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === tab
@@ -243,7 +273,8 @@ export default function CustomersPage() {
             }`}>
             {tab === 'list' ? 'Danh sách khách hàng'
               : tab === 'journey' ? 'Hành trình khách hàng'
-              : 'Tỷ lệ chuyển đổi'}
+              : tab === 'conversion' ? 'Tỷ lệ chuyển đổi'
+              : 'Báo cáo'}
           </button>
         ))}
       </div>
@@ -268,117 +299,169 @@ export default function CustomersPage() {
                 />
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-700">
-                    <Filter className="w-4 h-4" />
-                    Bộ lọc
-                  </div>
+              <div ref={filterBarRef} className="flex items-center gap-2 flex-wrap">
+                <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                  <Filter className="w-4 h-4" />
+                  Bộ lọc
+                </div>
+
+                <div className="relative">
                   <button
                     type="button"
-                    onClick={clearFilters}
-                    className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg hover:bg-slate-50"
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'assigned' ? null : 'assigned')}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-lg transition-all cursor-pointer ${
+                      assignedToFilter.length > 0
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
                   >
+                    Người phụ trách
+                    {assignedToFilter.length > 0 && (
+                      <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-indigo-600 text-white rounded-full">{assignedToFilter.length}</span>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  {openFilterDropdown === 'assigned' && (
+                    <div className="absolute top-9 left-0 z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-2">
+                      <div className="space-y-1 max-h-52 overflow-y-auto">
+                        <label className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={assignedToFilter.includes('unassigned')}
+                            onChange={() => toggleMultiFilter('unassigned', assignedToFilter, setAssignedToFilter)}
+                            className="w-3.5 h-3.5 rounded border-slate-300"
+                          />
+                          Chưa phân công
+                        </label>
+                        {staffList.map((s) => (
+                          <label key={s.id} className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={assignedToFilter.includes(s.id)}
+                              onChange={() => toggleMultiFilter(s.id, assignedToFilter, setAssignedToFilter)}
+                              className="w-3.5 h-3.5 rounded border-slate-300"
+                            />
+                            {s.display_name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'stage' ? null : 'stage')}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-lg transition-all cursor-pointer ${
+                      stageFilter.length > 0
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Trạng thái
+                    {stageFilter.length > 0 && (
+                      <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-indigo-600 text-white rounded-full">{stageFilter.length}</span>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  {openFilterDropdown === 'stage' && (
+                    <div className="absolute top-9 left-0 z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-2">
+                      <div className="space-y-1 max-h-52 overflow-y-auto">
+                        <label className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={stageFilter.includes('unassigned')}
+                            onChange={() => toggleMultiFilter('unassigned', stageFilter, setStageFilter)}
+                            className="w-3.5 h-3.5 rounded border-slate-300"
+                          />
+                          Chưa gán trạng thái
+                        </label>
+                        {stageOptions.map((s) => (
+                          <label key={s.id} className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={stageFilter.includes(s.id)}
+                              onChange={() => toggleMultiFilter(s.id, stageFilter, setStageFilter)}
+                              className="w-3.5 h-3.5 rounded border-slate-300"
+                            />
+                            {s.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'date' ? null : 'date')}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-lg transition-all cursor-pointer ${
+                      datePreset !== 'all' || fromDate || toDate
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Thời gian
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  {openFilterDropdown === 'date' && (
+                    <div className="absolute top-9 left-0 z-50 w-64 bg-white border border-slate-200 rounded-lg shadow-lg p-2">
+                      <div className="space-y-1">
+                        {[
+                          { id: 'all', label: 'Mọi thời gian' },
+                          { id: 'today', label: 'Hôm nay' },
+                          { id: '7d', label: '7 ngày gần đây' },
+                          { id: '30d', label: '30 ngày gần đây' },
+                          { id: 'this_month', label: 'Tháng này' },
+                        ].map((opt) => (
+                          <label key={opt.id} className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="datePreset"
+                              checked={datePreset === opt.id}
+                              onChange={() => { setDatePreset(opt.id as typeof datePreset); setPage(1); }}
+                              className="w-3.5 h-3.5 border-slate-300"
+                            />
+                            {opt.label}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="border-t border-slate-100 mt-2 pt-2 grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                          <label className="text-[11px] text-slate-500">Từ ngày</label>
+                          <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
+                            className="w-full h-7 px-2 text-[11px] border border-slate-200 rounded-lg"
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <label className="text-[11px] text-slate-500">Tới ngày</label>
+                          <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => { setToDate(e.target.value); setPage(1); }}
+                            className="w-full h-7 px-2 text-[11px] border border-slate-200 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {(assignedToFilter.length > 0 || stageFilter.length > 0 || datePreset !== 'all' || fromDate || toDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { clearFilters(); setOpenFilterDropdown(null); }}
+                    className="inline-flex items-center gap-1 h-8 px-3 text-[12px] text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
                     Xóa lọc
                   </button>
-                </div>
-
-                <div className="space-y-2">
-                  <details open className="border border-slate-100 rounded-lg px-3 py-2">
-                    <summary className="cursor-pointer text-[12px] font-bold text-slate-700">Người phụ trách</summary>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1 mt-2">
-                      <label className="flex items-center gap-2 text-[13px] text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={assignedToFilter.includes('unassigned')}
-                          onChange={() => toggleMultiFilter('unassigned', assignedToFilter, setAssignedToFilter)}
-                          className="w-4 h-4 rounded border-slate-300"
-                        />
-                        Chưa phân công
-                      </label>
-                      {staffList.map((s) => (
-                        <label key={s.id} className="flex items-center gap-2 text-[13px] text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={assignedToFilter.includes(s.id)}
-                            onChange={() => toggleMultiFilter(s.id, assignedToFilter, setAssignedToFilter)}
-                            className="w-4 h-4 rounded border-slate-300"
-                          />
-                          {s.display_name}
-                        </label>
-                      ))}
-                    </div>
-                  </details>
-
-                  <details className="border border-slate-100 rounded-lg px-3 py-2">
-                    <summary className="cursor-pointer text-[12px] font-bold text-slate-700">Trạng thái</summary>
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 mt-2">
-                      <label className="flex items-center gap-2 text-[13px] text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={stageFilter.includes('unassigned')}
-                          onChange={() => toggleMultiFilter('unassigned', stageFilter, setStageFilter)}
-                          className="w-4 h-4 rounded border-slate-300"
-                        />
-                        Chưa gán trạng thái
-                      </label>
-                      {stageOptions.map((s) => (
-                        <label key={s.id} className="flex items-center gap-2 text-[13px] text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={stageFilter.includes(s.id)}
-                            onChange={() => toggleMultiFilter(s.id, stageFilter, setStageFilter)}
-                            className="w-4 h-4 rounded border-slate-300"
-                          />
-                          {s.name}
-                        </label>
-                      ))}
-                    </div>
-                  </details>
-
-                  <details className="border border-slate-100 rounded-lg px-3 py-2">
-                    <summary className="cursor-pointer text-[12px] font-bold text-slate-700">Thời gian</summary>
-                    <div className="space-y-1.5 mt-2">
-                      {[
-                        { id: 'all', label: 'Mọi thời gian' },
-                        { id: 'today', label: 'Hôm nay' },
-                        { id: '7d', label: '7 ngày gần đây' },
-                        { id: '30d', label: '30 ngày gần đây' },
-                        { id: 'this_month', label: 'Tháng này' },
-                      ].map((opt) => (
-                        <label key={opt.id} className="flex items-center gap-2 text-[13px] text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={datePreset === opt.id}
-                            onChange={() => { setDatePreset(opt.id as typeof datePreset); setPage(1); }}
-                            className="w-4 h-4 rounded border-slate-300"
-                          />
-                          {opt.label}
-                        </label>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-500">Từ ngày</label>
-                        <input
-                          type="date"
-                          value={fromDate}
-                          onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                          className="w-full h-8 px-2 text-[12px] border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] text-slate-500">Tới ngày</label>
-                        <input
-                          type="date"
-                          value={toDate}
-                          onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                          className="w-full h-8 px-2 text-[12px] border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                    </div>
-                  </details>
-                </div>
+                )}
               </div>
             </div>
 
@@ -565,6 +648,9 @@ export default function CustomersPage() {
       {/* Tab 3: Conversion */}
       {activeTab === 'conversion' && <ConversionFunnelTab staffList={staffList} />}
 
+      {/* Tab 4: Reports */}
+      {activeTab === 'reports' && <ReportsTab allCustomers={allCustomers} staffList={staffList} />}
+
       {/* Customer Form Modal — UNCHANGED */}
       {showForm && (
         <CustomerFormModal
@@ -627,6 +713,7 @@ function CustomerJourneyTab() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  const [costCustomerId, setCostCustomerId] = useState<string | null>(null);
   const { data: staffRes } = useQuery({
     queryKey: ['profiles-staff'],
     queryFn: () => profilesApi.list({ role: 'admin,staff' }),
@@ -838,6 +925,7 @@ function CustomerJourneyTab() {
                       onCustomerDragStart={handleCustomerDragStart}
                       onCustomerDropToStage={handleCustomerDropToStage}
                       onCustomerDragEnd={handleCustomerDragEnd}
+                      onAddCost={(customerId) => setCostCustomerId(customerId)}
                     />
                   ))}
                 </div>
@@ -907,6 +995,15 @@ function CustomerJourneyTab() {
           </div>
         </div>
       )}
+
+      {costCustomerId && (
+        <AddCostModal
+          cost={null}
+          allCustomers={allCustomers}
+          preselectedCustomerId={costCustomerId}
+          onClose={() => setCostCustomerId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -921,6 +1018,7 @@ function KanbanStageBlock({
   onCustomerDragStart,
   onCustomerDropToStage,
   onCustomerDragEnd,
+  onAddCost,
 }: { 
   stage: any, 
   allCustomers: Customer[], 
@@ -931,6 +1029,7 @@ function KanbanStageBlock({
   onCustomerDragStart: (customerId: string, fromStageId: string) => void,
   onCustomerDropToStage: (toStageId: string) => void,
   onCustomerDragEnd: () => void,
+  onAddCost?: (customerId: string) => void,
 }) {
   const [isDropOver, setIsDropOver] = useState(false);
 
@@ -976,7 +1075,18 @@ function KanbanStageBlock({
               onClick={() => onCustomerClick(c.id)}
               className={`bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm flex flex-col gap-0.5 hover:border-indigo-300 hover:shadow transition-all ${dndEnabled ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
             >
-              <span className="text-[13px] font-bold text-slate-800">{c.customer_name}</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-bold text-slate-800">{c.customer_name}</span>
+                {onAddCost && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAddCost(c.id); }}
+                    className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all cursor-pointer"
+                    title="Thêm chi phí"
+                  >
+                    <DollarSign className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               {c.phone_number && <span className="text-[11px] text-slate-500">{c.phone_number}</span>}
               {c.email && <span className="text-[11px] text-slate-500">{c.email}</span>}
             </div>
@@ -1224,6 +1334,9 @@ function CustomerFormModal({
     create_account: false,
     account_phone: '',
     account_password: '',
+    initial_cost: '',
+    initial_cost_description: '',
+    initial_cost_type: 'other',
   });
 
   const updateField = (field: string, value: unknown) => {
@@ -1255,6 +1368,12 @@ function CustomerFormModal({
       data.create_account = true;
       data.account_phone = formatPhoneE164(formData.account_phone);
       data.account_password = formData.account_password;
+    }
+
+    if (!isEdit && formData.initial_cost && formData.initial_cost_description) {
+      data.initial_cost = Number(formData.initial_cost);
+      data.initial_cost_description = formData.initial_cost_description;
+      data.initial_cost_type = formData.initial_cost_type;
     }
 
     onSave(data);
@@ -1391,6 +1510,53 @@ function CustomerFormModal({
             </div>
           )}
 
+          {!isEdit && (
+            <div className="border rounded-md p-4 space-y-3">
+              <p className="text-[13px] font-medium flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                Chi phí ban đầu (tùy chọn)
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground">Số tiền (đ)</label>
+                  <input
+                    type="number"
+                    value={formData.initial_cost}
+                    onChange={(e) => updateField('initial_cost', e.target.value)}
+                    min="0"
+                    placeholder="0"
+                    className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground">Loại chi phí</label>
+                  <select
+                    value={formData.initial_cost_type}
+                    onChange={(e) => updateField('initial_cost_type', e.target.value)}
+                    className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="advertising">Quảng cáo</option>
+                    <option value="consulting">Tư vấn</option>
+                    <option value="travel">Đi lại</option>
+                    <option value="gift">Quà tặng</option>
+                    <option value="commission">Hoa hồng</option>
+                    <option value="other">Khác</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-muted-foreground">Mô tả chi phí</label>
+                <input
+                  type="text"
+                  value={formData.initial_cost_description}
+                  onChange={(e) => updateField('initial_cost_description', e.target.value)}
+                  placeholder="VD: Chi phí quảng cáo Facebook..."
+                  className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
@@ -1503,6 +1669,487 @@ function QuickExchangeModal({
             </button>
           </div>
         </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+const COST_TYPE_LABELS: Record<string, string> = {
+  advertising: 'Quảng cáo',
+  consulting: 'Tư vấn',
+  travel: 'Đi lại',
+  gift: 'Quà tặng',
+  commission: 'Hoa hồng',
+  other: 'Khác',
+};
+
+function ReportsTab({ allCustomers, staffList }: { allCustomers: Customer[]; staffList: StaffProfile[] }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | '7d' | '30d' | 'this_month' | 'custom'>('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
+
+  const [costCustomerFilter, setCostCustomerFilter] = useState('');
+  const [costTypeFilter, setCostTypeFilter] = useState('');
+  const [showAddCost, setShowAddCost] = useState(false);
+  const [editingCost, setEditingCost] = useState<CustomerCost | null>(null);
+
+  const { data: costsRes, isLoading: isLoadingCosts } = useQuery({
+    queryKey: ['customer-costs-all'],
+    queryFn: () => pipelineApi.listCosts({ limit: 1000 }),
+    staleTime: 30_000,
+  });
+  const allCosts: CustomerCost[] = costsRes?.data?.data ?? [];
+
+  const { data: ordersRes, isLoading: isLoadingOrders } = useQuery({
+    queryKey: ['orders-all-reports'],
+    queryFn: () => orderApi.list({ limit: 1000 }),
+    staleTime: 30_000,
+  });
+  const allOrders: Order[] = ordersRes?.data?.data ?? [];
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const sevenDaysAgo = new Date(startOfToday);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const thirtyDaysAgo = new Date(startOfToday);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+
+  const matchesDatePreset = (dateString: string) => {
+    if (!dateString) return false;
+    const d = new Date(dateString);
+    if (fromDate || toDate) {
+      const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+      const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    }
+    if (datePreset === 'all') return true;
+    if (datePreset === 'today') return d >= startOfToday;
+    if (datePreset === '7d') return d >= sevenDaysAgo;
+    if (datePreset === '30d') return d >= thirtyDaysAgo;
+    if (datePreset === 'this_month') return d >= startOfMonth;
+    return true;
+  };
+
+  const filteredOrders = allOrders.filter(o => {
+    if (!matchesDatePreset(o.order_date || o.created_at)) return false;
+    if (staffFilter && o.created_by !== staffFilter) return false;
+    return true;
+  });
+
+  const filteredCosts = allCosts.filter(c => {
+    if (!matchesDatePreset(c.cost_date || c.created_at)) return false;
+    if (staffFilter && c.created_by !== staffFilter) return false;
+    if (costCustomerFilter && c.customer_id !== costCustomerFilter) return false;
+    if (costTypeFilter && c.cost_type !== costTypeFilter) return false;
+    return true;
+  });
+
+  const totalCost = filteredCosts.reduce((sum, c) => sum + Number(c.amount), 0);
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + Number(o.final_amount), 0);
+  const numOrders = filteredOrders.length;
+  const costPerOrder = numOrders > 0 ? Math.round(totalCost / numOrders) : 0;
+  const avgCost = filteredCosts.length > 0 ? Math.round(totalCost / filteredCosts.length) : 0;
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => pipelineApi.deleteCost(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-costs-all'] });
+      toast.success('Đã xóa chi phí');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể xóa chi phí', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const handleDelete = (id: string) => {
+    if (confirm('Xóa chi phí này?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const customerMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of allCustomers) map.set(c.id, c.customer_name);
+    return map;
+  }, [allCustomers]);
+
+  return (
+    <div className="space-y-4">
+      {/* Top Filters */}
+      <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-1.5 text-[13px] font-bold text-slate-700 mr-2">
+          <Filter className="w-4 h-4" />
+          Bộ lọc báo cáo:
+        </div>
+        
+        <select
+          value={datePreset}
+          onChange={(e) => { setDatePreset(e.target.value as any); setFromDate(''); setToDate(''); }}
+          className="h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-white cursor-pointer"
+        >
+          <option value="all">Mọi thời gian</option>
+          <option value="today">Hôm nay</option>
+          <option value="7d">7 ngày gần đây</option>
+          <option value="30d">30 ngày gần đây</option>
+          <option value="this_month">Tháng này</option>
+          <option value="custom">Tùy chỉnh</option>
+        </select>
+
+        {datePreset === 'custom' && (
+          <>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="h-8 px-2 text-[13px] border border-slate-200 rounded-lg bg-white"
+            />
+            <span className="text-slate-400">-</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="h-8 px-2 text-[13px] border border-slate-200 rounded-lg bg-white"
+            />
+          </>
+        )}
+
+        <select
+          value={staffFilter}
+          onChange={(e) => setStaffFilter(e.target.value)}
+          className="h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-white cursor-pointer"
+        >
+          <option value="">Tất cả nhân sự</option>
+          {staffList.map(s => (
+            <option key={s.id} value={s.id}>{s.display_name}</option>
+          ))}
+        </select>
+        
+        <div className="ml-auto">
+          <button
+            onClick={() => { setEditingCost(null); setShowAddCost(true); }}
+            className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Thêm chi phí
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng doanh thu</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">{totalRevenue.toLocaleString('vi-VN')} đ</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng chi phí</p>
+          <p className="text-2xl font-bold text-red-500 mt-1">{totalCost.toLocaleString('vi-VN')} đ</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Số đơn</p>
+          <p className="text-2xl font-bold text-indigo-700 mt-1">{numOrders}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Giá đơn (CP/Đơn)</p>
+          <p className="text-xl font-bold text-slate-900 mt-2">{costPerOrder.toLocaleString('vi-VN')} đ</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Chi phí TB</p>
+          <p className="text-xl font-bold text-slate-900 mt-2">{avgCost.toLocaleString('vi-VN')} đ</p>
+        </div>
+      </div>
+
+      {/* Costs List */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="p-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-3">
+          <span className="text-[13px] font-bold text-slate-700">Chi tiết các khoản chi phí</span>
+          <div className="ml-auto flex gap-2">
+            <select
+              value={costCustomerFilter}
+              onChange={(e) => setCostCustomerFilter(e.target.value)}
+              className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg bg-white cursor-pointer"
+            >
+              <option value="">Tất cả khách hàng</option>
+              {allCustomers.map((c) => (
+                <option key={c.id} value={c.id}>{c.customer_name}</option>
+              ))}
+            </select>
+            <select
+              value={costTypeFilter}
+              onChange={(e) => setCostTypeFilter(e.target.value)}
+              className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg bg-white cursor-pointer"
+            >
+              <option value="">Tất cả loại CP</option>
+              {Object.entries(COST_TYPE_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b bg-slate-50/50">
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Khách hàng</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Mô tả</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Loại</th>
+                <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Số tiền</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ngày</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Người tạo</th>
+                <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ghi chú</th>
+                <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoadingCosts ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={8} className="py-4 px-4">
+                      <div className="h-6 bg-slate-50 animate-pulse rounded-lg" />
+                    </td>
+                  </tr>
+                ))
+              ) : filteredCosts.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-12 text-[14px] text-slate-400">
+                    Chưa có chi phí nào
+                  </td>
+                </tr>
+              ) : (
+                filteredCosts.map((cost) => (
+                  <tr key={cost.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="py-4 px-4 font-medium text-slate-900">
+                      {customerMap.get(cost.customer_id) || cost.customer_id}
+                    </td>
+                    <td className="py-4 px-4 text-slate-700 max-w-[200px]">
+                      <div className="line-clamp-2">{cost.description}</div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {COST_TYPE_LABELS[cost.cost_type] || cost.cost_type}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-right font-bold text-slate-900 tabular-nums">
+                      {Number(cost.amount).toLocaleString('vi-VN')} đ
+                    </td>
+                    <td className="py-4 px-4 text-[12px] text-slate-500 tabular-nums">
+                      {cost.cost_date ? new Date(cost.cost_date).toLocaleDateString('vi-VN') : '—'}
+                    </td>
+                    <td className="py-4 px-4 text-slate-500">
+                      {cost.profiles?.display_name || '—'}
+                    </td>
+                    <td className="py-4 px-4 text-slate-500 max-w-[150px]">
+                      <div className="line-clamp-1">{cost.notes || '—'}</div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => { setEditingCost(cost); setShowAddCost(true); }}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                          title="Chỉnh sửa"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(cost.id)}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showAddCost && (
+        <AddCostModal
+          cost={editingCost}
+          allCustomers={allCustomers}
+          onClose={() => { setShowAddCost(false); setEditingCost(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddCostModal({
+  cost,
+  allCustomers,
+  preselectedCustomerId,
+  onClose,
+}: {
+  cost: CustomerCost | null;
+  allCustomers: Customer[];
+  preselectedCustomerId?: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const isEdit = !!cost;
+
+  const [formData, setFormData] = useState({
+    customer_id: cost?.customer_id ?? preselectedCustomerId ?? '',
+    amount: cost ? String(cost.amount) : '',
+    description: cost?.description ?? '',
+    cost_type: cost?.cost_type ?? 'other',
+    cost_date: cost?.cost_date?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+    notes: cost?.notes ?? '',
+  });
+
+  const updateField = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const data = {
+        customer_id: formData.customer_id,
+        amount: Number(formData.amount),
+        description: formData.description,
+        cost_type: formData.cost_type,
+        cost_date: formData.cost_date,
+        notes: formData.notes || null,
+      };
+      return isEdit
+        ? pipelineApi.updateCost(cost!.id, data)
+        : pipelineApi.createCost(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-costs'] });
+      toast.success(isEdit ? 'Cập nhật chi phí thành công' : 'Thêm chi phí thành công');
+      onClose();
+    },
+    onError: (error: any) => {
+      toast.error('Không thể lưu chi phí', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.customer_id || !formData.amount || !formData.description) return;
+    saveMutation.mutate();
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+      <div className="bg-card border rounded-lg shadow-lg w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <h2 className="text-[14px] font-semibold">
+            {isEdit ? 'Sửa chi phí' : 'Thêm chi phí mới'}
+          </h2>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded-md cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[13px] font-medium">Khách hàng *</label>
+            <select
+              value={formData.customer_id}
+              onChange={(e) => updateField('customer_id', e.target.value)}
+              required
+              disabled={!!preselectedCustomerId}
+              className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">-- Chọn khách hàng --</option>
+              {allCustomers.map((c) => (
+                <option key={c.id} value={c.id}>{c.customer_name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Số tiền (đ) *</label>
+              <input
+                type="number"
+                value={formData.amount}
+                onChange={(e) => updateField('amount', e.target.value)}
+                required
+                min="1"
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Loại chi phí</label>
+              <select
+                value={formData.cost_type}
+                onChange={(e) => updateField('cost_type', e.target.value)}
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {Object.entries(COST_TYPE_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[13px] font-medium">Mô tả *</label>
+            <input
+              type="text"
+              value={formData.description}
+              onChange={(e) => updateField('description', e.target.value)}
+              required
+              placeholder="Mô tả chi phí..."
+              className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Ngày chi phí</label>
+              <input
+                type="date"
+                value={formData.cost_date}
+                onChange={(e) => updateField('cost_date', e.target.value)}
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Ghi chú</label>
+              <input
+                type="text"
+                value={formData.notes}
+                onChange={(e) => updateField('notes', e.target.value)}
+                placeholder="Ghi chú thêm..."
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 px-3 text-[12px] font-medium border rounded-md hover:bg-accent transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="h-8 px-3 text-[12px] font-medium text-primary-foreground bg-primary rounded-md hover:bg-primary/90 disabled:opacity-40 transition-colors cursor-pointer"
+            >
+              {saveMutation.isPending ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Thêm chi phí'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>,
     document.body

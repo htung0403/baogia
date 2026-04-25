@@ -267,6 +267,26 @@ export const createContractSchema = z.object({
 });
 
 // ============================================================
+// CUSTOMER COSTS
+// ============================================================
+export const createCustomerCostSchema = z.object({
+  customer_id: z.string().uuid(),
+  amount: z.number().positive('Số tiền phải lớn hơn 0'),
+  description: z.string().min(1, 'Mô tả không được trống'),
+  cost_type: z.enum(['advertising', 'consulting', 'travel', 'gift', 'commission', 'other']).default('other'),
+  cost_date: z.string().optional(),
+  notes: z.string().optional().nullable(),
+});
+
+export const updateCustomerCostSchema = z.object({
+  amount: z.number().positive('Số tiền phải lớn hơn 0').optional(),
+  description: z.string().min(1).optional(),
+  cost_type: z.enum(['advertising', 'consulting', 'travel', 'gift', 'commission', 'other']).optional(),
+  cost_date: z.string().optional(),
+  notes: z.string().optional().nullable(),
+});
+
+// ============================================================
 // Type exports (orders + payments)
 // ============================================================
 export type OrderItemInput   = z.infer<typeof orderItemInputSchema>;
@@ -282,3 +302,5 @@ export type CreateColumnInput = z.infer<typeof createColumnSchema>;
 export type UpdateColumnInput = z.infer<typeof updateColumnSchema>;
 export type CreateStageInput = z.infer<typeof createStageSchema>;
 export type UpdateStageInput = z.infer<typeof updateStageSchema>;
+export type CreateCustomerCostInput = z.infer<typeof createCustomerCostSchema>;
+export type UpdateCustomerCostInput = z.infer<typeof updateCustomerCostSchema>;

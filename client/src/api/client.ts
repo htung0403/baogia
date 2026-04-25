@@ -389,5 +389,26 @@ export const pipelineApi = {
 
   deleteStage: (id: string) =>
     api.delete(`/pipeline/stages/${id}`),
+
+  listCosts: (params?: { customer_id?: string; cost_type?: string; page?: number; limit?: number }) =>
+    api.get('/pipeline/costs', { params }),
+
+  getCostSummary: (customerId: string) =>
+    api.get(`/pipeline/costs/${customerId}/summary`),
+
+  createCost: (data: {
+    customer_id: string; amount: number; description: string;
+    cost_type?: string; cost_date?: string; notes?: string | null;
+  }) =>
+    api.post('/pipeline/costs', data),
+
+  updateCost: (id: string, data: {
+    amount?: number; description?: string;
+    cost_type?: string; cost_date?: string; notes?: string | null;
+  }) =>
+    api.put(`/pipeline/costs/${id}`, data),
+
+  deleteCost: (id: string) =>
+    api.delete(`/pipeline/costs/${id}`),
 };
 
