@@ -5,7 +5,7 @@ import { authApi, profilesApi } from '@/api/client';
 import { useToast } from '@/components/ui/toast';
 import { useAuthStore } from '@/store/auth.store';
 import type { StaffProfile } from '@/types';
-import { Plus, Search, Shield, UserCheck, UserX, X } from 'lucide-react';
+import { Edit, MoreHorizontal, Plus, Search, Shield, Trash2, UserCheck, UserX, X } from 'lucide-react';
 
 export default function EmployeesPage() {
   const queryClient = useQueryClient();
@@ -16,6 +16,8 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<StaffProfile | null>(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
   const { data: profilesRes, isLoading } = useQuery({
     queryKey: ['profiles-admin', { showInactive, search }],
@@ -104,7 +106,7 @@ export default function EmployeesPage() {
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Tên hiển thị</th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Vai trò</th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Trạng thái</th>
-                <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-72">Hành động</th>
+                <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -142,28 +144,44 @@ export default function EmployeesPage() {
                       )}
                     </td>
                     <td className="py-4 px-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <select
-                          value={employee.role}
-                          disabled={!isAdmin || updateMutation.isPending || employee.id === currentUser?.id}
-                          onChange={(e) => {
-                            const role = e.target.value as 'admin' | 'staff';
-                            if (role === employee.role) return;
-                            updateMutation.mutate({ id: employee.id, data: { role } });
-                          }}
-                          className="h-8 px-2 text-[12px] border border-slate-200 rounded-md bg-white disabled:opacity-50"
-                        >
-                          <option value="staff">Staff</option>
-                          <option value="admin">Admin</option>
-                        </select>
-
+                      <div className="relative flex justify-end">
                         <button
-                          disabled={!isAdmin || updateMutation.isPending || employee.id === currentUser?.id}
-                          onClick={() => updateMutation.mutate({ id: employee.id, data: { is_active: !employee.is_active } })}
-                          className={`h-8 px-3 text-[12px] font-semibold rounded-md border transition-colors disabled:opacity-50 ${employee.is_active ? 'border-rose-200 text-rose-700 hover:bg-rose-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}
+                          disabled={!isAdmin || updateMutation.isPending}
+                          onClick={() => setOpenActionMenuId((prev) => (prev === employee.id ? null : employee.id))}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                         >
-                          {employee.is_active ? 'Vô hiệu hóa' : 'Kích hoạt'}
+                          <MoreHorizontal className="w-4 h-4" />
                         </button>
+
+                        {openActionMenuId === employee.id && (
+                          <div className="absolute right-0 top-9 z-20 w-48 rounded-lg border border-slate-200 bg-white shadow-lg p-1.5 space-y-1">
+                            <button
+                              disabled={employee.id === currentUser?.id}
+                              onClick={() => {
+                                setEditingEmployee(employee);
+                                setOpenActionMenuId(null);
+                              }}
+                              className="w-full h-8 px-2.5 text-left text-[12px] rounded-md hover:bg-indigo-50 text-slate-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                              Sửa
+                            </button>
+
+                            <button
+                              disabled={employee.id === currentUser?.id || !employee.is_active}
+                              onClick={() => {
+                                if (!confirm(`Xóa nhân viên "${employee.display_name}"?`)) return;
+                                updateMutation.mutate({ id: employee.id, data: { is_active: false } });
+                                setOpenActionMenuId(null);
+                              }}
+                              className="w-full h-8 px-2.5 text-left text-[12px] rounded-md hover:bg-rose-50 text-rose-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Xóa
+                            </button>
+
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -183,7 +201,105 @@ export default function EmployeesPage() {
           }}
         />
       )}
+
+      {editingEmployee && (
+        <EditEmployeeModal
+          employee={editingEmployee}
+          isLoading={updateMutation.isPending}
+          onClose={() => setEditingEmployee(null)}
+          onSave={(data) => {
+            updateMutation.mutate(
+              { id: editingEmployee.id, data },
+              { onSuccess: () => setEditingEmployee(null) }
+            );
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function EditEmployeeModal({
+  employee,
+  isLoading,
+  onClose,
+  onSave,
+}: {
+  employee: StaffProfile;
+  isLoading: boolean;
+  onClose: () => void;
+  onSave: (data: { display_name?: string; role?: 'admin' | 'staff'; is_active?: boolean }) => void;
+}) {
+  const [formData, setFormData] = useState({
+    display_name: employee.display_name,
+    role: employee.role as 'admin' | 'staff',
+    is_active: employee.is_active,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave({
+      display_name: formData.display_name.trim(),
+      role: formData.role,
+      is_active: formData.is_active,
+    });
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h3 className="text-[15px] font-bold text-slate-800">Sửa nhân viên</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-slate-700">Tên hiển thị *</label>
+            <input
+              required
+              value={formData.display_name}
+              onChange={(e) => setFormData((p) => ({ ...p, display_name: e.target.value }))}
+              className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-slate-700">Vai trò *</label>
+            <select
+              value={formData.role}
+              onChange={(e) => setFormData((p) => ({ ...p, role: e.target.value as 'staff' | 'admin' }))}
+              className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg"
+            >
+              <option value="staff">Staff</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-[13px] text-slate-700">
+            <input
+              type="checkbox"
+              checked={formData.is_active}
+              onChange={(e) => setFormData((p) => ({ ...p, is_active: e.target.checked }))}
+              className="w-4 h-4 rounded border-slate-300"
+            />
+            Tài khoản đang hoạt động
+          </label>
+
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 mt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">
+              Hủy
+            </button>
+            <button type="submit" disabled={isLoading} className="px-4 py-2 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+              {isLoading ? 'Đang lưu...' : 'Lưu thay đổi'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
   );
 }
 

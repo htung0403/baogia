@@ -11,6 +11,19 @@ import {
   ChevronRight,
   TrendingUp,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  Radar,
+  Tooltip,
+  BarChart as ReBarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Bar,
+} from 'recharts';
 
 export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'customers'>('overview');
@@ -33,6 +46,29 @@ export default function AnalyticsPage() {
   const overview = overviewRes?.data?.data;
   const activity = activityRes?.data?.data ?? [];
   const activityMeta = activityRes?.data?.meta;
+
+  const totalSessions = overview?.total_sessions ?? 0;
+  const uniqueCustomers = overview?.unique_customers ?? 0;
+  const recentSessions = overview?.recent_sessions ?? [];
+  const totalDurationSeconds = recentSessions.reduce(
+    (sum: number, session: Record<string, unknown>) => sum + ((session.duration_seconds as number) ?? 0),
+    0
+  );
+  const avgDurationSeconds = recentSessions.length > 0 ? totalDurationSeconds / recentSessions.length : 0;
+  const topProductViews = (overview?.top_products?.[0]?.count as number) ?? 0;
+
+  const comparisonRaw = [
+    { metric: 'Lượt xem', value: totalSessions },
+    { metric: 'Khách hàng', value: uniqueCustomers },
+    { metric: 'TG trung bình', value: Math.round(avgDurationSeconds) },
+    { metric: 'SP top', value: topProductViews },
+  ];
+  const maxComparisonValue = Math.max(...comparisonRaw.map((item) => item.value), 1);
+  const hasComparisonData = comparisonRaw.some((item) => item.value > 0);
+  const radarData = comparisonRaw.map((item) => ({
+    ...item,
+    normalized: Math.round((item.value / maxComparisonValue) * 100),
+  }));
 
   return (
     <div className="space-y-4">
@@ -208,6 +244,60 @@ export default function AnalyticsPage() {
               {(!overview?.top_products || overview.top_products.length === 0) && (
                 <div className="text-center py-8 text-slate-400">Chưa có dữ liệu</div>
               )}
+            </div>
+          </div>
+
+          {/* Visual Axis Comparison */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 text-indigo-600" />
+              </div>
+              <h2 className="text-[14px] font-bold text-slate-800">Biểu đồ so sánh trực quan theo trục</h2>
+            </div>
+            <div className="p-5">
+              {!hasComparisonData ? (
+                <div className="h-[260px] flex items-center justify-center text-[13px] text-slate-400 border border-slate-100 rounded-xl bg-slate-50/40">
+                  Chưa đủ dữ liệu để hiển thị biểu đồ so sánh.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="h-[320px] border border-slate-100 rounded-xl p-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={radarData} outerRadius="72%">
+                        <PolarGrid stroke="#e2e8f0" />
+                        <PolarAngleAxis dataKey="metric" tick={{ fill: '#64748b', fontSize: 12 }} />
+                        <Radar
+                          name="Tỷ trọng tương đối"
+                          dataKey="normalized"
+                          stroke="#4f46e5"
+                          fill="#6366f1"
+                          fillOpacity={0.25}
+                          strokeWidth={2}
+                        />
+                        <Tooltip
+                          formatter={(value: number, _name: string, item: any) => [`${item?.payload?.value ?? value}`, 'Giá trị thực']}
+                          labelFormatter={(label) => `${label}`}
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="h-[320px] border border-slate-100 rounded-xl p-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ReBarChart data={comparisonRaw} margin={{ top: 12, right: 12, left: 0, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="metric" tick={{ fill: '#64748b', fontSize: 12 }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+                        <Tooltip formatter={(value: number) => [value, 'Giá trị']} />
+                        <Bar dataKey="value" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                      </ReBarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+              <p className="text-[12px] text-slate-500 mt-3">
+                So sánh nhanh bằng 2 góc nhìn: radar (tương quan) và cột (giá trị thực).
+              </p>
             </div>
           </div>
         </div>

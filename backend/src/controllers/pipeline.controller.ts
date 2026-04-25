@@ -87,7 +87,7 @@ export async function assignCustomerToStage(req: Request, res: Response, next: N
   try {
     const user = (req as AuthenticatedRequest).user;
     const { customerId } = req.params;
-    const { stage_id } = assignStageSchema.parse(req.body);
+    const { stage_id, note } = assignStageSchema.parse(req.body);
 
     const { data: customer, error: custErr } = await supabaseAdmin
       .from('customers')
@@ -129,6 +129,7 @@ export async function assignCustomerToStage(req: Request, res: Response, next: N
         customer_id: customerId,
         from_stage_id: fromStageId,
         to_stage_id: stage_id,
+        note,
         moved_by: user.id,
       });
 
@@ -137,7 +138,7 @@ export async function assignCustomerToStage(req: Request, res: Response, next: N
       action: 'update',
       entityType: 'customer',
       entityId: customerId,
-      newData: { stage_id },
+      newData: { stage_id, note },
       ipAddress: req.ip,
     });
 

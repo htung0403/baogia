@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +21,16 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
+import {
+  ResponsiveContainer,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Bar,
+} from 'recharts';
+import { useAuthStore } from '@/store/auth.store';
 
 // ============================================================
 // Color maps: MUST be static objects (not dynamic strings)
@@ -46,13 +56,19 @@ export default function CustomersPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
+  const currentUser = useAuthStore((s) => s.user);
   const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion'>('list');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [assignedToFilter, setAssignedToFilter] = useState('');
+  const [assignedToFilter, setAssignedToFilter] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | '7d' | '30d' | 'this_month'>('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [quickExchangeCustomer, setQuickExchangeCustomer] = useState<Customer | null>(null);
+  const PAGE_SIZE = 20;
 
   // Staff list for assigned_to filter (shared cache with Tab 3)
   const { data: staffRes } = useQuery({
@@ -64,18 +80,122 @@ export default function CustomersPage() {
 
   // Customer list query (only runs when on Tab 1)
   const { data: res, isLoading } = useQuery({
-    queryKey: ['customers', { page, search, assignedToFilter }],
+    queryKey: ['customers-list-all'],
     queryFn: () => customerApi.list({
-      page, limit: 20,
-      ...(search ? { search } : {}),
-      ...(assignedToFilter ? { assigned_to: assignedToFilter } : {}),
+      page: 1,
+      limit: 1000,
     }),
     staleTime: 5 * 60 * 1000,
     enabled: activeTab === 'list',
   });
+  const allCustomers: Customer[] = res?.data?.data ?? [];
 
-  const customers: Customer[] = res?.data?.data ?? [];
-  const meta = res?.data?.meta;
+  const { data: boardRes } = useQuery({
+    queryKey: ['pipeline-board'],
+    queryFn: () => pipelineApi.getBoard(),
+    staleTime: 60_000,
+    enabled: activeTab === 'list',
+  });
+  const board: BoardResponse = boardRes?.data?.data ?? { columns: [], total_customers: 0 };
+
+  const stageMap = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const col of board.columns ?? []) {
+      for (const stage of col.stages ?? []) {
+        for (const customer of stage.customers ?? []) {
+          map.set(customer.id, { id: stage.id, name: stage.name });
+        }
+      }
+    }
+    return map;
+  }, [board.columns]);
+
+  const stageOptions = useMemo(() => {
+    const options: Array<{ id: string; name: string }> = [];
+    for (const col of board.columns ?? []) {
+      for (const stage of col.stages ?? []) {
+        options.push({ id: stage.id, name: stage.name });
+      }
+    }
+    return options;
+  }, [board.columns]);
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const sevenDaysAgo = new Date(startOfToday);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const thirtyDaysAgo = new Date(startOfToday);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+
+  const matchesDatePreset = (createdAt: string) => {
+    const created = new Date(createdAt);
+    if (fromDate || toDate) {
+      const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+      const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+      if (from && created < from) return false;
+      if (to && created > to) return false;
+      return true;
+    }
+    if (datePreset === 'all') return true;
+    if (datePreset === 'today') return created >= startOfToday;
+    if (datePreset === '7d') return created >= sevenDaysAgo;
+    if (datePreset === '30d') return created >= thirtyDaysAgo;
+    if (datePreset === 'this_month') return created >= startOfMonth;
+    return true;
+  };
+
+  const filteredByStageDate = allCustomers.filter((customer) => {
+    const stage = stageMap.get(customer.id);
+    const stageKey = stage?.id ?? 'unassigned';
+    const stageMatched = stageFilter.length === 0 || stageFilter.includes(stageKey);
+    const assignedMatched = assignedToFilter.length === 0 || assignedToFilter.includes(customer.assigned_to ?? 'unassigned');
+    return stageMatched && assignedMatched && matchesDatePreset(customer.created_at);
+  });
+
+  const customers = filteredByStageDate.filter((customer) => {
+    if (!search.trim()) return true;
+    const term = search.toLowerCase();
+    return (
+      customer.customer_name?.toLowerCase().includes(term) ||
+      customer.phone_number?.toLowerCase().includes(term) ||
+      customer.email?.toLowerCase().includes(term)
+    );
+  });
+
+  const totalPages = Math.max(1, Math.ceil(customers.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedCustomers = customers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const dailyBarData = useMemo(() => {
+    const dayCount = datePreset === 'today' ? 1 : datePreset === '7d' ? 7 : datePreset === '30d' ? 30 : 7;
+    const list: Array<{ date: string; count: number }> = [];
+    const map: Record<string, number> = {};
+    filteredByStageDate.forEach((c) => {
+      const key = new Date(c.created_at).toLocaleDateString('vi-VN');
+      map[key] = (map[key] ?? 0) + 1;
+    });
+    for (let i = dayCount - 1; i >= 0; i -= 1) {
+      const d = new Date(startOfToday);
+      d.setDate(d.getDate() - i);
+      const key = d.toLocaleDateString('vi-VN');
+      list.push({ date: key, count: map[key] ?? 0 });
+    }
+    return list;
+  }, [filteredByStageDate, datePreset, startOfToday]);
+
+  const toggleMultiFilter = (value: string, selected: string[], setter: (next: string[]) => void) => {
+    setter(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]);
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setAssignedToFilter([]);
+    setStageFilter([]);
+    setDatePreset('all');
+    setFromDate('');
+    setToDate('');
+    setPage(1);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => customerApi.delete(id),
@@ -92,7 +212,7 @@ export default function CustomersPage() {
     mutationFn: (data: { id?: string; body: Record<string, unknown> }) =>
       data.id ? customerApi.update(data.id, data.body) : customerApi.create(data.body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['customers-list-all'] });
       setShowForm(false);
       setEditingCustomer(null);
       toast.success('Lưu khách hàng thành công');
@@ -131,11 +251,11 @@ export default function CustomersPage() {
       {/* Tab 1: Customer List */}
       {activeTab === 'list' && (
         <div className="space-y-4">
-          <p className="text-[14px] text-slate-500 mt-1">Quản lý danh sách khách hàng ({meta?.total ?? 0})</p>
+          <p className="text-[14px] text-slate-500 mt-1">Quản lý danh sách khách hàng ({customers.length})</p>
 
           {/* Filter bar */}
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-            <div className="flex flex-col sm:flex-row gap-3 flex-1">
+            <div className="flex flex-col gap-3 flex-1">
               {/* Search */}
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -148,17 +268,118 @@ export default function CustomersPage() {
                 />
               </div>
 
-              {/* Người phụ trách filter */}
-              <select
-                value={assignedToFilter}
-                onChange={(e) => { setAssignedToFilter(e.target.value); setPage(1); }}
-                className="h-10 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
-              >
-                <option value="">Tất cả người phụ trách</option>
-                {staffList.map(s => (
-                  <option key={s.id} value={s.id}>{s.display_name}</option>
-                ))}
-              </select>
+              <div className="bg-white border border-slate-200 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-700">
+                    <Filter className="w-4 h-4" />
+                    Bộ lọc
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg hover:bg-slate-50"
+                  >
+                    Xóa lọc
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <details open className="border border-slate-100 rounded-lg px-3 py-2">
+                    <summary className="cursor-pointer text-[12px] font-bold text-slate-700">Người phụ trách</summary>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1 mt-2">
+                      <label className="flex items-center gap-2 text-[13px] text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={assignedToFilter.includes('unassigned')}
+                          onChange={() => toggleMultiFilter('unassigned', assignedToFilter, setAssignedToFilter)}
+                          className="w-4 h-4 rounded border-slate-300"
+                        />
+                        Chưa phân công
+                      </label>
+                      {staffList.map((s) => (
+                        <label key={s.id} className="flex items-center gap-2 text-[13px] text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={assignedToFilter.includes(s.id)}
+                            onChange={() => toggleMultiFilter(s.id, assignedToFilter, setAssignedToFilter)}
+                            className="w-4 h-4 rounded border-slate-300"
+                          />
+                          {s.display_name}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+
+                  <details className="border border-slate-100 rounded-lg px-3 py-2">
+                    <summary className="cursor-pointer text-[12px] font-bold text-slate-700">Trạng thái</summary>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 mt-2">
+                      <label className="flex items-center gap-2 text-[13px] text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={stageFilter.includes('unassigned')}
+                          onChange={() => toggleMultiFilter('unassigned', stageFilter, setStageFilter)}
+                          className="w-4 h-4 rounded border-slate-300"
+                        />
+                        Chưa gán trạng thái
+                      </label>
+                      {stageOptions.map((s) => (
+                        <label key={s.id} className="flex items-center gap-2 text-[13px] text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={stageFilter.includes(s.id)}
+                            onChange={() => toggleMultiFilter(s.id, stageFilter, setStageFilter)}
+                            className="w-4 h-4 rounded border-slate-300"
+                          />
+                          {s.name}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+
+                  <details className="border border-slate-100 rounded-lg px-3 py-2">
+                    <summary className="cursor-pointer text-[12px] font-bold text-slate-700">Thời gian</summary>
+                    <div className="space-y-1.5 mt-2">
+                      {[
+                        { id: 'all', label: 'Mọi thời gian' },
+                        { id: 'today', label: 'Hôm nay' },
+                        { id: '7d', label: '7 ngày gần đây' },
+                        { id: '30d', label: '30 ngày gần đây' },
+                        { id: 'this_month', label: 'Tháng này' },
+                      ].map((opt) => (
+                        <label key={opt.id} className="flex items-center gap-2 text-[13px] text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={datePreset === opt.id}
+                            onChange={() => { setDatePreset(opt.id as typeof datePreset); setPage(1); }}
+                            className="w-4 h-4 rounded border-slate-300"
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-slate-500">Từ ngày</label>
+                        <input
+                          type="date"
+                          value={fromDate}
+                          onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
+                          className="w-full h-8 px-2 text-[12px] border border-slate-200 rounded-lg"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-slate-500">Tới ngày</label>
+                        <input
+                          type="date"
+                          value={toDate}
+                          onChange={(e) => { setToDate(e.target.value); setPage(1); }}
+                          className="w-full h-8 px-2 text-[12px] border border-slate-200 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
             </div>
 
             {/* Thêm mới button */}
@@ -169,6 +390,42 @@ export default function CustomersPage() {
               <Plus className="w-4 h-4" />
               Thêm khách hàng
             </button>
+          </div>
+
+          {/* Counters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng KH theo lọc</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{customers.length}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">KH hôm nay</p>
+              <p className="text-2xl font-bold text-indigo-700 mt-1">
+                {customers.filter((c) => new Date(c.created_at) >= startOfToday).length}
+              </p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">KH 7 ngày gần đây</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {customers.filter((c) => new Date(c.created_at) >= sevenDaysAgo).length}
+              </p>
+            </div>
+          </div>
+
+          {/* Daily Bar Chart */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+            <h3 className="text-[14px] font-bold text-slate-800 mb-3">So sánh lượng khách theo ngày</h3>
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyBarData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip formatter={(value) => [value, 'Số khách']} />
+                  <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           {/* Table */}
@@ -198,14 +455,14 @@ export default function CustomersPage() {
                         </td>
                       </tr>
                     ))
-                  ) : customers.length === 0 ? (
+                  ) : pagedCustomers.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="text-center py-12 text-[14px] text-slate-400">
                         Không tìm thấy khách hàng nào
                       </td>
                     </tr>
                   ) : (
-                    customers.map((customer) => (
+                    pagedCustomers.map((customer) => (
                       <tr key={customer.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => navigate(`/admin/customers/${customer.id}`)}>
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
@@ -275,22 +532,22 @@ export default function CustomersPage() {
             </div>
 
             {/* Pagination */}
-            {meta && meta.totalPages > 1 && (
+            {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-2.5 border-t">
                 <p className="text-[12px] text-muted-foreground">
-                  Trang {meta.page} / {meta.totalPages} ({meta.total} khách hàng)
+                  Trang {safePage} / {totalPages} ({customers.length} khách hàng)
                 </p>
                 <div className="flex items-center gap-0.5">
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
+                    disabled={safePage === 1}
                     className="p-1 hover:bg-accent rounded-md disabled:opacity-40 cursor-pointer"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))}
-                    disabled={page === meta.totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
                     className="p-1 hover:bg-accent rounded-md disabled:opacity-40 cursor-pointer"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -312,6 +569,8 @@ export default function CustomersPage() {
       {showForm && (
         <CustomerFormModal
           customer={editingCustomer}
+          staffList={staffList}
+          currentUserId={currentUser?.id}
           onSave={(data) => saveMutation.mutate({ id: editingCustomer?.id, body: data })}
           onClose={() => { setShowForm(false); setEditingCustomer(null); }}
           isLoading={saveMutation.isPending}
@@ -355,16 +614,25 @@ function ToggleSwitch({ label, checked, onChange }: {
 // ============================================================
 function CustomerJourneyTab() {
   const navigate = useNavigate();
-  const [dndMode, setDndMode]     = useState(false);  // cosmetic only
+  const currentUser = useAuthStore((s) => s.user);
+  const [dndMode, setDndMode]     = useState(true);  // enable drag-drop by default
   const [showAll, setShowAll]     = useState(true);   // cosmetic only
   const [showAllKH, setShowAllKH] = useState(false);  // cosmetic only
   const [showPipelineSettings, setShowPipelineSettings] = useState(false);
   const [draggingCustomer, setDraggingCustomer] = useState<{ customerId: string; fromStageId: string } | null>(null);
+  const [pendingStageChange, setPendingStageChange] = useState<{ customerId: string; stageId: string } | null>(null);
+  const [stageChangeNote, setStageChangeNote] = useState('');
   const toast = useToast();
   
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  const { data: staffRes } = useQuery({
+    queryKey: ['profiles-staff'],
+    queryFn: () => profilesApi.list({ role: 'admin,staff' }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const staffList: StaffProfile[] = staffRes?.data?.data ?? [];
 
   const { data: allRes } = useQuery({
     queryKey: ['customers-all'],
@@ -381,8 +649,8 @@ function CustomerJourneyTab() {
   const board: BoardResponse = boardRes?.data?.data ?? { columns: [], total_customers: 0 };
 
   const assignMutation = useMutation({
-    mutationFn: (data: { customerId: string; stageId: string }) => 
-      pipelineApi.assignStage(data.customerId, data.stageId),
+    mutationFn: (data: { customerId: string; stageId: string; note: string }) => 
+      pipelineApi.assignStage(data.customerId, data.stageId, data.note),
     onMutate: async ({ customerId, stageId }) => {
       await queryClient.cancelQueries({ queryKey: ['pipeline-board'] });
       const previousBoard = queryClient.getQueryData(['pipeline-board']);
@@ -448,6 +716,8 @@ function CustomerJourneyTab() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['customer'] });
     },
   });
 
@@ -459,7 +729,8 @@ function CustomerJourneyTab() {
   const handleCustomerDropToStage = (toStageId: string) => {
     if (!draggingCustomer) return;
     if (draggingCustomer.fromStageId !== toStageId) {
-      assignMutation.mutate({ customerId: draggingCustomer.customerId, stageId: toStageId });
+      setPendingStageChange({ customerId: draggingCustomer.customerId, stageId: toStageId });
+      setStageChangeNote('');
     }
     setDraggingCustomer(null);
   };
@@ -468,13 +739,41 @@ function CustomerJourneyTab() {
     setDraggingCustomer(null);
   };
 
+  const handleAssignWithRequiredNote = (customerId: string, stageId: string) => {
+    const note = window.prompt('Nhập ghi chú khi đổi trạng thái:');
+    if (!note || !note.trim()) {
+      toast.error('Bạn cần nhập ghi chú để đổi trạng thái');
+      return;
+    }
+    assignMutation.mutate({ customerId, stageId, note: note.trim() });
+  };
+
+  const handleConfirmPendingStageChange = () => {
+    if (!pendingStageChange) return;
+    if (!stageChangeNote.trim()) {
+      toast.error('Ghi chú không được để trống');
+      return;
+    }
+    assignMutation.mutate({
+      customerId: pendingStageChange.customerId,
+      stageId: pendingStageChange.stageId,
+      note: stageChangeNote.trim(),
+    });
+    setPendingStageChange(null);
+    setStageChangeNote('');
+  };
+
   const saveMutation = useMutation({
     mutationFn: (data: { body: Record<string, unknown> }) => customerApi.create(data.body),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
       const newCustomerId = (res.data as any)?.data?.id;
       if (newCustomerId && selectedStage) {
-        assignMutation.mutate({ customerId: newCustomerId, stageId: selectedStage });
+        assignMutation.mutate({
+          customerId: newCustomerId,
+          stageId: selectedStage,
+          note: 'Tạo mới khách hàng và gán vào trạng thái',
+        });
       }
       setShowForm(false);
       setSelectedStage(null);
@@ -533,7 +832,7 @@ function CustomerJourneyTab() {
                       stage={stage}
                       allCustomers={unassignedCustomers}
                       dndEnabled={dndMode}
-                      onAssign={(cId, sId) => assignMutation.mutate({ customerId: cId, stageId: sId })}
+                      onAssign={handleAssignWithRequiredNote}
                       onCreateNew={(sId) => { setSelectedStage(sId); setShowForm(true); }}
                       onCustomerClick={(id) => navigate(`/admin/customers/${id}`)}
                       onCustomerDragStart={handleCustomerDragStart}
@@ -551,6 +850,8 @@ function CustomerJourneyTab() {
       {showForm && (
         <CustomerFormModal
           customer={null}
+          staffList={staffList}
+          currentUserId={currentUser?.id}
           onSave={(data) => saveMutation.mutate({ body: data })}
           onClose={() => { setShowForm(false); setSelectedStage(null); }}
           isLoading={saveMutation.isPending}
@@ -559,6 +860,52 @@ function CustomerJourneyTab() {
 
       {showPipelineSettings && (
         <PipelineSettingsModal onClose={() => setShowPipelineSettings(false)} />
+      )}
+
+      {pendingStageChange && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50/60">
+              <h3 className="text-[14px] font-bold text-slate-800">Ghi chú đổi trạng thái</h3>
+              <button
+                type="button"
+                onClick={() => { setPendingStageChange(null); setStageChangeNote(''); }}
+                className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-[13px] text-slate-600">
+                Mỗi lần đổi trạng thái cần có ghi chú. Vui lòng nhập nội dung trước khi xác nhận.
+              </p>
+              <textarea
+                rows={4}
+                value={stageChangeNote}
+                onChange={(e) => setStageChangeNote(e.target.value)}
+                placeholder="Ví dụ: KH đã xác nhận lịch tư vấn, chuyển sang giai đoạn tiếp theo..."
+                className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+            <div className="px-5 py-4 border-t flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setPendingStageChange(null); setStageChangeNote(''); }}
+                className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPendingStageChange}
+                disabled={assignMutation.isPending || !stageChangeNote.trim()}
+                className="h-8 px-4 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
+              >
+                {assignMutation.isPending ? 'Đang lưu...' : 'Xác nhận chuyển'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -852,22 +1199,28 @@ function FunnelStep({ step, name, count, rows, isRevenue }: {
 // ============================================================
 function CustomerFormModal({
   customer,
+  staffList,
+  currentUserId,
   onSave,
   onClose,
   isLoading,
 }: {
   customer: Customer | null;
+  staffList?: StaffProfile[];
+  currentUserId?: string;
   onSave: (data: Record<string, unknown>) => void;
   onClose: () => void;
   isLoading: boolean;
 }) {
   const isEdit = !!customer;
+  const createdAtDisplay = customer?.created_at ? formatDate(customer.created_at) : formatDate(new Date().toISOString());
   const [formData, setFormData] = useState({
     customer_name: customer?.customer_name ?? '',
     phone_number: customer?.phone_number ?? '',
     email: customer?.email ?? '',
     address: customer?.address ?? '',
     notes: customer?.notes ?? '',
+    assigned_to: customer?.assigned_to ?? currentUserId ?? '',
     create_account: false,
     account_phone: '',
     account_password: '',
@@ -895,6 +1248,7 @@ function CustomerFormModal({
       email: formData.email || null,
       address: formData.address || null,
       notes: formData.notes || null,
+      assigned_to: formData.assigned_to || null,
     };
 
     if (!isEdit && formData.create_account) {
@@ -959,6 +1313,31 @@ function CustomerFormModal({
               onChange={(e) => updateField('address', e.target.value)}
               className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Người phụ trách</label>
+              <select
+                value={formData.assigned_to}
+                onChange={(e) => updateField('assigned_to', e.target.value)}
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">-- Chọn người phụ trách --</option>
+                {(staffList ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>{s.display_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium">Ngày giờ thêm</label>
+              <input
+                type="text"
+                value={createdAtDisplay}
+                readOnly
+                className="w-full h-8 px-3 text-[13px] border rounded-md bg-slate-50 text-slate-500"
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">

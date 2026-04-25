@@ -48,6 +48,7 @@ export const createCustomerSchema = z.object({
   email: z.string().email('Email không hợp lệ').nullable().optional(),
   address: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  assigned_to: z.string().uuid().nullable().optional(),
   tax_code: z.string().nullable().optional(),
   industry: z.string().nullable().optional(),
   customer_group: z.string().nullable().optional(),
@@ -199,6 +200,7 @@ export const createPaymentSchema = z.object({
 // Stage assignment
 export const assignStageSchema = z.object({
   stage_id: z.string().uuid('stage_id phải là UUID hợp lệ'),
+  note: z.string().trim().min(1, 'Ghi chú không được để trống'),
 });
 
 // Funnel query params
@@ -237,7 +239,7 @@ export const updateStageSchema = z.object({
 // Create activity
 export const createActivitySchema = z.object({
   customer_id:     z.string().uuid(),
-  activity_type:   z.enum(['email','sms','zns','call','task','meeting','note','trao_doi']),
+  activity_type:   z.enum(['email','sms','zns','call','task','meeting','note','trao_doi','kh_phan_hoi']),
   title:           z.string().min(1),
   description:     z.string().optional().nullable(),
   assigned_to:     z.string().uuid().optional().nullable(),

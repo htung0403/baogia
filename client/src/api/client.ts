@@ -312,8 +312,8 @@ export const pipelineApi = {
   getBoard: () =>
     api.get('/pipeline/board'),
 
-  assignStage: (customerId: string, stageId: string) =>
-    api.post(`/pipeline/customers/${customerId}/stage`, { stage_id: stageId }),
+  assignStage: (customerId: string, stageId: string, note: string) =>
+    api.post(`/pipeline/customers/${customerId}/stage`, { stage_id: stageId, note }),
 
   // Tab 3 — Funnel
   getFunnel: (params?: {
@@ -324,8 +324,8 @@ export const pipelineApi = {
     api.get('/pipeline/funnel', { params }),
 
   // Activities
-  listActivities: (customerId: string) =>
-    api.get(`/pipeline/activities/${customerId}`),
+  listActivities: (customerId: string, type?: string) =>
+    api.get(`/pipeline/activities/${customerId}`, { params: type ? { type } : undefined }),
 
   listAppointments: (customerId: string) =>
     api.get(`/pipeline/activities/${customerId}`, { params: { type: 'meeting' } }),

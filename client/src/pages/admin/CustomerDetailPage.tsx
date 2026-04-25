@@ -36,6 +36,7 @@ import {
   Eye,
   CreditCard,
   Search,
+  Plus,
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -115,8 +116,6 @@ const TAB_LIST: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'lich-su-trang-thai', label: 'Lịch sử chuyển trạng thái', icon: Clock },
   { id: 'lich-hen', label: 'Lịch hẹn', icon: Calendar },
   { id: 'co-hoi', label: 'Cơ hội', icon: Target },
-  { id: 'lich-di-tuyen', label: 'Lịch đi tuyến', icon: Map },
-  { id: 'automation', label: 'Automation', icon: Zap },
   { id: 'gioi-thieu', label: 'Giới thiệu', icon: Share2 },
   { id: 'ticket', label: 'Ticket', icon: TicketIcon },
 ];
@@ -164,7 +163,7 @@ export default function CustomerDetailPage() {
     : '';
 
   const assignStageMutation = useMutation({
-    mutationFn: (stageId: string) => pipelineApi.assignStage(id!, stageId),
+    mutationFn: ({ stageId, note }: { stageId: string; note: string }) => pipelineApi.assignStage(id!, stageId, note),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
       queryClient.invalidateQueries({ queryKey: ['customer-stats', id] });
@@ -310,7 +309,12 @@ export default function CustomerDetailPage() {
               onChange={(e) => {
                 const nextStageId = e.target.value;
                 if (!nextStageId || nextStageId === currentStageId) return;
-                assignStageMutation.mutate(nextStageId);
+                const note = window.prompt('Nhập ghi chú khi đổi trạng thái:');
+                if (!note || !note.trim()) {
+                  toast.error('Bạn cần nhập ghi chú để đổi trạng thái');
+                  return;
+                }
+                assignStageMutation.mutate({ stageId: nextStageId, note: note.trim() });
               }}
               disabled={!customer || assignStageMutation.isPending}
               className="w-full h-9 px-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-500 disabled:opacity-60"
@@ -444,6 +448,9 @@ export default function CustomerDetailPage() {
                     <span className="text-[11px] text-slate-400">→</span>
                     <span className="text-[12px] font-bold text-indigo-700">{item.to_stage?.name || '—'}</span>
                   </div>
+                  {item.note && (
+                    <p className="mt-1.5 text-[12px] text-slate-600 whitespace-pre-wrap">{item.note}</p>
+                  )}
                   <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
                     <span>{item.moved_by_profile?.display_name || 'Hệ thống'}</span>
                     <span className="tabular-nums">{formatDate(item.moved_at)}</span>
@@ -478,6 +485,7 @@ export default function CustomerDetailPage() {
         {/* Tab Content */}
         <div className="flex-1 min-w-0 flex flex-col">
           {activeTab === 'trao-doi' && <TabTraoDoi customerId={customer.id} />}
+          {activeTab === 'kh-phan-hoi' && <TabKhachHangPhanHoi customerId={customer.id} />}
           {activeTab === 'giao-dich' && (
             <div className="space-y-4">
               <TabOrders orders={orders} />
@@ -486,7 +494,7 @@ export default function CustomerDetailPage() {
           )}
           {activeTab === 'lich-su-trang-thai' && <TabStageHistory history={stageHistory} />}
           {activeTab === 'lich-hen' && <TabLichHen customerId={customer.id} />}
-          {['kh-phan-hoi', 'co-hoi', 'lich-di-tuyen', 'automation', 'gioi-thieu', 'ticket'].includes(activeTab) && (
+          {['co-hoi', 'gioi-thieu', 'ticket'].includes(activeTab) && (
             <TabPlaceholder id={activeTab} />
           )}
         </div>
@@ -521,6 +529,7 @@ interface AssignedPriceList {
 interface StageHistoryItem {
   id: string;
   moved_at: string;
+  note?: string;
   from_stage?: { id: string; name: string } | null;
   to_stage?: { id: string; name: string } | null;
   moved_by_profile?: { display_name: string } | null;
@@ -722,6 +731,181 @@ export function TabPlaceholder({ id: _id }: { id: string }) {
   );
 }
 
+function TabKhachHangPhanHoi({ customerId }: { customerId: string }) {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const { data: feedbackRes, isLoading } = useQuery({
+    queryKey: ['activities', customerId, 'kh_phan_hoi'],
+    queryFn: () => pipelineApi.listActivities(customerId, 'kh_phan_hoi'),
+    enabled: !!customerId,
+    retry: false,
+  });
+
+  const createFeedback = useMutation({
+    mutationFn: () =>
+      pipelineApi.createActivity({
+        customer_id: customerId,
+        activity_type: 'kh_phan_hoi',
+        title: title.trim(),
+        description: description.trim() || null,
+      }),
+    onSuccess: () => {
+      setTitle('');
+      setDescription('');
+      setShowCreateModal(false);
+      queryClient.invalidateQueries({ queryKey: ['activities', customerId, 'kh_phan_hoi'] });
+      toast.success('Đã lưu phản hồi');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể lưu phản hồi', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const feedbackItems = feedbackRes?.data?.data || [];
+  const filteredFeedbackItems = feedbackItems.filter((item: any) => {
+    if (!search) return true;
+    const term = search.toLowerCase();
+    return (
+      (item.title && item.title.toLowerCase().includes(term)) ||
+      (item.description && item.description.toLowerCase().includes(term))
+    );
+  });
+
+  const handleSaveFeedback = () => {
+    if (!title.trim()) {
+      toast.error('Tiêu đề phản hồi không được để trống');
+      return;
+    }
+    createFeedback.mutate();
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50/50">
+        <h2 className="text-[13px] font-bold text-slate-800">Khách hàng phản hồi</h2>
+        <button
+          type="button"
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Thêm phản hồi
+        </button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-[14px] font-bold text-slate-800">Danh sách phản hồi ({feedbackItems.length})</h3>
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Tìm theo tiêu đề/nội dung..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-500 w-[240px]"
+            />
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : filteredFeedbackItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-slate-100 rounded-xl bg-slate-50/40">
+            <MessageCircle className="w-10 h-10 text-slate-300 mb-3" />
+            <p className="text-[14px] font-bold text-slate-600">Chưa có phản hồi nào</p>
+            <p className="text-[13px] text-slate-400 mt-1">
+              Nhấn "Thêm phản hồi" để tạo phản hồi đầu tiên.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredFeedbackItems.map((item: any) => (
+              <div key={item.id} className="border border-slate-200 rounded-xl p-4 bg-white">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="text-[13px] font-bold text-slate-800 truncate">{item.title}</p>
+                  <span className="text-[12px] text-slate-400 shrink-0">{formatRelativeTime(item.created_at)}</span>
+                </div>
+                {item.description && (
+                  <p className="text-[13px] text-slate-600 whitespace-pre-wrap">{item.description}</p>
+                )}
+                <p className="mt-2 text-[12px] text-slate-400">
+                  Người lưu: {item.profiles?.display_name || 'Người dùng'}
+                </p>
+                <p className="mt-0.5 text-[12px] text-slate-400">
+                  Ngày giờ lưu: {formatDate(item.created_at)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50/50">
+              <h4 className="text-[14px] font-bold text-slate-800">Thêm phản hồi khách hàng</h4>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="h-8 px-3 text-[12px] font-bold border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Tiêu đề phản hồi"
+                className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
+              />
+              <textarea
+                rows={4}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Nội dung phản hồi..."
+                className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500 resize-none"
+              />
+              <p className="text-[12px] text-slate-400">
+                Hệ thống sẽ tự lưu ngày giờ và người lưu theo tài khoản đang đăng nhập.
+              </p>
+            </div>
+
+            <div className="px-5 py-4 border-t bg-white flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveFeedback}
+                disabled={createFeedback.isPending || !title.trim()}
+                className="h-8 px-4 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                {createFeedback.isPending ? 'Đang lưu...' : 'Lưu phản hồi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabStageHistory({ history }: { history: StageHistoryItem[] }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -739,6 +923,7 @@ function TabStageHistory({ history }: { history: StageHistoryItem[] }) {
               <tr className="border-b bg-slate-50/30">
                 <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Từ trạng thái</th>
                 <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Đến trạng thái</th>
+                <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Ghi chú</th>
                 <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Người thao tác</th>
                 <th className="text-left py-3 px-5 font-bold text-slate-600 uppercase tracking-wider text-[11px]">Thời gian</th>
               </tr>
@@ -752,6 +937,7 @@ function TabStageHistory({ history }: { history: StageHistoryItem[] }) {
                       {item.to_stage?.name || '—'}
                     </span>
                   </td>
+                  <td className="py-3.5 px-5 text-slate-600">{item.note || '—'}</td>
                   <td className="py-3.5 px-5 text-slate-600">{item.moved_by_profile?.display_name || 'Hệ thống'}</td>
                   <td className="py-3.5 px-5 text-[12px] text-slate-400 tabular-nums">{formatDate(item.moved_at)}</td>
                 </tr>
@@ -1115,13 +1301,11 @@ function TabLichHen({ customerId }: { customerId: string }) {
     <div className="border border-slate-200 rounded-xl p-4 bg-white hover:shadow-sm transition-shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-bold text-slate-800">{appt.title}</p>
-          {appt.scheduled_at && (
-            <div className="flex items-center gap-1.5 mt-1 text-[12px] text-slate-500">
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{formatDate(appt.scheduled_at)}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-1.5 text-[12px] text-slate-500">
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{formatDate(appt.scheduled_at || appt.created_at)}</span>
+          </div>
+          <p className="text-[14px] font-bold text-slate-800 mt-1">{appt.title}</p>
           {appt.profiles?.display_name && (
             <div className="flex items-center gap-1.5 mt-0.5 text-[12px] text-slate-400">
               <User className="w-3.5 h-3.5" />

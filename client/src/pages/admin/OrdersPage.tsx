@@ -4,11 +4,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderApi, productApi, customerApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { Check, ClipboardList, Plus, X } from 'lucide-react';
+import { Check, ClipboardList, Copy, Plus, QrCode, X } from 'lucide-react';
 import type {
   Order, OrderWithDetails, OrderItemInput, OrderPaymentStatus, OrderStatus,
   Product, Customer, ApiResponse,
 } from '@/types';
+
+// Cấu hình nhận thanh toán QR (VietQR)
+// TODO: Thay bằng tài khoản thật của doanh nghiệp nếu khác.
+const PAYMENT_QR_CONFIG = {
+  bankBin: '970415', // VietinBank
+  accountNo: '100001692967',
+  accountName: 'CONG TY TNHH THUONG MAI DIEN TU TLINK',
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // STATUS BADGES
@@ -334,6 +342,17 @@ function OrderDetailPanel({ orderId, onClose }: { orderId: string; onClose: () =
     },
   });
 
+  const remainingAmount = Math.max(0, Math.round(order?.payment_summary?.remaining ?? order?.final_amount ?? 0));
+  const transferContent = order?.code ? `THANH TOAN ${order.code}` : 'THANH TOAN DON HANG';
+  const canRenderPaymentQr =
+    !!PAYMENT_QR_CONFIG.bankBin &&
+    !!PAYMENT_QR_CONFIG.accountNo &&
+    !!PAYMENT_QR_CONFIG.accountName &&
+    remainingAmount > 0;
+  const paymentQrUrl = canRenderPaymentQr
+    ? `https://img.vietqr.io/image/${PAYMENT_QR_CONFIG.bankBin}-${PAYMENT_QR_CONFIG.accountNo}-compact2.png?amount=${remainingAmount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(PAYMENT_QR_CONFIG.accountName)}`
+    : '';
+
   return createPortal(
     <div className="fixed top-0 left-0 right-0 bottom-0 z-[999] flex justify-end">
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -411,6 +430,41 @@ function OrderDetailPanel({ orderId, onClose }: { orderId: string; onClose: () =
                 <span className="text-muted-foreground">Trạng thái TT</span>
                 <PaymentStatusBadge status={order.payment_summary?.payment_status ?? 'unpaid'} />
               </div>
+            </div>
+
+            {/* Payment QR */}
+            <div className="bg-white border border-border rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <QrCode className="w-4 h-4 text-indigo-600" />
+                <p className="text-[12px] font-semibold text-muted-foreground">QR THANH TOÁN</p>
+              </div>
+              {canRenderPaymentQr ? (
+                <div className="space-y-2">
+                  <div className="flex justify-center">
+                    <img src={paymentQrUrl} alt="QR thanh toán" className="w-48 h-48 object-contain border border-slate-200 rounded-lg bg-white" />
+                  </div>
+                  <div className="text-[12px] space-y-1">
+                    <p><span className="text-muted-foreground">Ngân hàng:</span> {PAYMENT_QR_CONFIG.bankBin}</p>
+                    <p><span className="text-muted-foreground">Số tài khoản:</span> {PAYMENT_QR_CONFIG.accountNo}</p>
+                    <p><span className="text-muted-foreground">Số tiền:</span> <span className="font-semibold text-indigo-600">{formatCurrency(remainingAmount)}</span></p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate"><span className="text-muted-foreground">Nội dung:</span> {transferContent}</p>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(transferContent)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] border border-slate-200 rounded-md hover:bg-slate-50"
+                      >
+                        <Copy className="w-3 h-3" />
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2">
+                  Chưa có cấu hình tài khoản nhận tiền hoặc đơn đã thanh toán đủ. Cập nhật `PAYMENT_QR_CONFIG` trong `OrdersPage` để hiển thị QR.
+                </p>
+              )}
             </div>
 
             {/* Dates */}

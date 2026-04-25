@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS customer_stage_history (
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     from_stage_id   UUID REFERENCES pipeline_stages(id) ON DELETE SET NULL,
     to_stage_id     UUID NOT NULL REFERENCES pipeline_stages(id) ON DELETE RESTRICT,
+    note            TEXT NOT NULL,
     moved_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     moved_by        UUID REFERENCES profiles(id) ON DELETE SET NULL
 );
@@ -64,7 +65,7 @@ CREATE TABLE IF NOT EXISTS customer_activities (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     activity_type   TEXT NOT NULL 
-                    CHECK (activity_type IN ('email','sms','zns','call','task','meeting','note','trao_doi')),
+                    CHECK (activity_type IN ('email','sms','zns','call','task','meeting','note','trao_doi','kh_phan_hoi')),
     title           TEXT NOT NULL,
     description     TEXT,
     assigned_to     UUID REFERENCES profiles(id) ON DELETE SET NULL,

@@ -168,6 +168,7 @@ export async function createCustomer(req: Request, res: Response, next: NextFunc
         fax: input.fax ?? null,
         skype: input.skype ?? null,
         facebook: input.facebook ?? null,
+        assigned_to: input.assigned_to ?? user.id,
         created_by: user.id,
       })
       .select('*')
@@ -345,13 +346,13 @@ export async function getCustomerStats(req: Request, res: Response, next: NextFu
       .select(`
         id,
         moved_at,
+        note,
         from_stage:from_stage_id(id, name),
         to_stage:to_stage_id(id, name),
         moved_by_profile:moved_by(display_name)
       `)
       .eq('customer_id', id)
-      .order('moved_at', { ascending: false })
-      .limit(50);
+      .order('moved_at', { ascending: false });
 
     // 7. Financial summary (tổng hợp tài chính)
     const { data: financialRow } = await supabaseAdmin
