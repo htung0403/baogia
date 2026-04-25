@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { customerApi, profilesApi, pipelineApi, orderApi } from '@/api/client';
 import { formatDate, formatPhoneE164 } from '@/lib/utils';
-import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, CustomerCostType, Order } from '@/types';
+import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, Order } from '@/types';
 import PipelineSettingsModal from './PipelineSettingsModal';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -1705,7 +1705,7 @@ function ReportsTab({ allCustomers, staffList }: { allCustomers: Customer[]; sta
   });
   const allCosts: CustomerCost[] = costsRes?.data?.data ?? [];
 
-  const { data: ordersRes, isLoading: isLoadingOrders } = useQuery({
+  const { data: ordersRes } = useQuery({
     queryKey: ['orders-all-reports'],
     queryFn: () => orderApi.list({ limit: 1000 }),
     staleTime: 30_000,
