@@ -6,6 +6,7 @@ import {
   createCareSettingSchema,
   updateCareSettingSchema,
   generateCareEventsSchema,
+  createCareEventSchema,
   updateCareEventSchema,
 } from '../validators/index.js';
 
@@ -286,17 +287,44 @@ export async function generateCareEvents(req: Request, res: Response, next: Next
   }
 }
 
+export async function createCareEvent(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const input = createCareEventSchema.parse(req.body);
+    const { data, error } = await supabaseAdmin
+      .from('care_schedule_events')
+      .insert({
+        customer_id: input.customer_id,
+        scheduled_date: input.scheduled_date,
+        notes: input.notes,
+        assigned_to: input.assigned_to,
+        status: 'pending',
+      })
+      .select(`
+        *,
+        customers(id, customer_name, phone_number, customer_group_id),
+        care_schedule_steps(id, name, description, days_offset),
+        care_schedule_settings(id, cycle_days, customer_groups(id, name)),
+        profiles!assigned_to(display_name)
+      `)
+      .single();
+
+    if (error) throw ApiError.internal(error.message);
+    sendCreated(res, data, 'Tạo lịch chăm sóc thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function listCareEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { month, group_id, assigned_to, status } = req.query as Record<string, string>;
+    const { month, group_id, assigned_to, status, customer_id } = req.query as Record<string, string>;
 
-    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    if (!month && !customer_id) {
+      throw ApiError.badRequest('Cần cung cấp tham số month hoặc customer_id');
+    }
+    if (month && !/^\d{4}-\d{2}$/.test(month)) {
       throw ApiError.badRequest('Tham số month không hợp lệ (định dạng: YYYY-MM)');
     }
-
-    const [year, monthNum] = month.split('-').map(Number);
-    const firstDay = new Date(year, monthNum - 1, 1).toISOString().split('T')[0];
-    const lastDay = new Date(year, monthNum, 0).toISOString().split('T')[0];
 
     let query = supabaseAdmin
       .from('care_schedule_events')
@@ -307,10 +335,18 @@ export async function listCareEvents(req: Request, res: Response, next: NextFunc
         care_schedule_settings(id, cycle_days, customer_groups(id, name)),
         profiles!assigned_to(display_name)
       `)
-      .gte('scheduled_date', firstDay)
-      .lte('scheduled_date', lastDay)
       .order('scheduled_date', { ascending: true });
 
+    if (month) {
+      const [year, monthNum] = month.split('-').map(Number);
+      const firstDay = new Date(year, monthNum - 1, -1).toISOString().split('T')[0];
+      const nextMonth = new Date(year, monthNum, 3).toISOString().split('T')[0];
+      query = query.gte('scheduled_date', firstDay).lte('scheduled_date', nextMonth);
+    }
+
+    if (customer_id) {
+      query = query.eq('customer_id', customer_id);
+    }
     if (group_id) {
       query = query.eq('care_schedule_settings.customer_group_id', group_id);
     }

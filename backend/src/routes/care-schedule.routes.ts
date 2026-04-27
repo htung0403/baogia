@@ -7,6 +7,7 @@ import {
   updateCareSetting,
   deleteCareSetting,
   generateCareEvents,
+  createCareEvent,
   listCareEvents,
   updateCareEvent,
 } from '../controllers/care-schedule.controller.js';
@@ -24,6 +25,7 @@ router.delete('/settings/:id', authenticate, requireAdminOrStaff, deleteCareSett
 router.post('/events/generate', authenticate, requireAdminOrStaff, generateCareEvents);
 
 // Events query + actions
+router.post('/events', authenticate, requireAdminOrStaff, createCareEvent);
 router.get('/events', authenticate, requireAdminOrStaff, listCareEvents);
 router.patch('/events/:id', authenticate, requireAdminOrStaff, updateCareEvent);
 

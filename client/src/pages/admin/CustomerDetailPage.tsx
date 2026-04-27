@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { customerApi, profilesApi, pipelineApi, careScheduleApi } from '@/api/client';
-import { formatDate, formatDuration } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDuration } from '@/lib/utils';
 import type { Customer, CustomerActivity, CareScheduleEvent } from '@/types';
 // @ts-expect-error unused import
 import { CrmStatCard } from '@/components/ui/CrmStatCard';
