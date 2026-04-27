@@ -13,6 +13,8 @@ import {
   CreditCard,
   TrendingUp,
   UsersRound,
+  Calendar,
+  Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { displayEmailOrPhone } from '@/lib/utils';
@@ -29,6 +31,8 @@ const adminNavItems = [
   { to: '/admin/payments', icon: CreditCard, label: 'Thanh toán', end: false },
   { to: '/admin/financial', icon: TrendingUp, label: 'Tài chính', end: false },
   { to: '/admin/analytics', icon: BarChart3, label: 'Thống kê', end: false },
+  { to: '/admin/care-settings', icon: Settings, label: 'Chăm sóc KH', end: false },
+  { to: '/admin/care-calendar', icon: Calendar, label: 'Lịch chăm sóc', end: false },
 ];
 
 export default function AdminLayout() {

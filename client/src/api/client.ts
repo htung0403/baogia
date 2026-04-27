@@ -446,3 +446,53 @@ export const customerGroupApi = {
     api.delete(`/customer-groups/${id}`),
 };
 
+// --- Care Schedule ---
+export const careScheduleApi = {
+  // Settings
+  listSettings: () =>
+    api.get('/care-schedule/settings'),
+
+  getSettingByGroup: (groupId: string) =>
+    api.get(`/care-schedule/settings/group/${groupId}`),
+
+  createSetting: (data: {
+    customer_group_id: string;
+    cycle_days: number;
+    is_active?: boolean;
+    steps: Array<{
+      name: string;
+      description?: string | null;
+      days_offset: number;
+      sort_order?: number;
+    }>;
+  }) => api.post('/care-schedule/settings', data),
+
+  updateSetting: (id: string, data: {
+    cycle_days?: number;
+    is_active?: boolean;
+    steps?: Array<{
+      id?: string;
+      name: string;
+      description?: string | null;
+      days_offset: number;
+      sort_order?: number;
+    }>;
+  }) => api.put(`/care-schedule/settings/${id}`, data),
+
+  deleteSetting: (id: string) =>
+    api.delete(`/care-schedule/settings/${id}`),
+
+  // Events
+  generateEvents: (data: { customer_group_id: string; horizon_days?: number }) =>
+    api.post('/care-schedule/events/generate', data),
+
+  listEvents: (params: { month: string; group_id?: string; assigned_to?: string; status?: string }) =>
+    api.get('/care-schedule/events', { params }),
+
+  updateEvent: (id: string, data: {
+    status?: 'done' | 'skipped';
+    notes?: string | null;
+    scheduled_date?: string;
+  }) => api.patch(`/care-schedule/events/${id}`, data),
+};
+

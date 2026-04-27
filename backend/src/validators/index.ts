@@ -323,3 +323,42 @@ export type CreateCustomerCostInput = z.infer<typeof createCustomerCostSchema>;
 export type UpdateCustomerCostInput = z.infer<typeof updateCustomerCostSchema>;
 export type CreateCustomerGroupInput = z.infer<typeof createCustomerGroupSchema>;
 export type UpdateCustomerGroupInput = z.infer<typeof updateCustomerGroupSchema>;
+
+// ============================================================
+// Care Schedule
+// ============================================================
+
+export const createCareSettingSchema = z.object({
+  customer_group_id: z.string().uuid(),
+  cycle_days: z.number().int().min(1).max(365),
+  is_active: z.boolean().optional().default(true),
+  steps: z.array(z.object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(500).nullable().optional(),
+    days_offset: z.number().int().min(0).max(365),
+    sort_order: z.number().int().min(0).optional().default(0),
+  })).min(1, 'Cần ít nhất 1 bước chăm sóc'),
+});
+
+export const updateCareSettingSchema = z.object({
+  cycle_days: z.number().int().min(1).max(365).optional(),
+  is_active: z.boolean().optional(),
+  steps: z.array(z.object({
+    id: z.string().uuid().optional(),
+    name: z.string().min(1).max(200),
+    description: z.string().max(500).nullable().optional(),
+    days_offset: z.number().int().min(0).max(365),
+    sort_order: z.number().int().min(0).optional().default(0),
+  })).min(1, 'Cần ít nhất 1 bước chăm sóc').optional(),
+});
+
+export const generateCareEventsSchema = z.object({
+  customer_group_id: z.string().uuid(),
+  horizon_days: z.number().int().min(1).max(365).optional().default(90),
+});
+
+export const updateCareEventSchema = z.object({
+  status: z.enum(['done', 'skipped']).optional(),
+  notes: z.string().max(1000).nullable().optional(),
+  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày: YYYY-MM-DD').optional(),
+});

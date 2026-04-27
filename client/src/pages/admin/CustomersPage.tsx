@@ -69,7 +69,8 @@ export default function CustomersPage() {
   const [datePreset, setDatePreset] = useState<'all' | 'today' | '7d' | '30d' | 'this_month'>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [openFilterDropdown, setOpenFilterDropdown] = useState<'assigned' | 'stage' | 'date' | null>(null);
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<'assigned' | 'stage' | 'date' | 'care' | null>(null);
+  const [careDaysThreshold, setCareDaysThreshold] = useState<number | null>(null);
   const filterBarRef = useRef<HTMLDivElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -163,12 +164,21 @@ export default function CustomersPage() {
     return true;
   };
 
+  const matchesCareDays = (lastActivityAt: string | null | undefined): boolean => {
+    if (careDaysThreshold === null) return true;
+    if (!lastActivityAt) return true;
+    const threshold = new Date(startOfToday);
+    threshold.setDate(threshold.getDate() - careDaysThreshold);
+    return new Date(lastActivityAt) < threshold;
+  };
+
   const filteredByStageDate = allCustomers.filter((customer) => {
     const stage = stageMap.get(customer.id);
     const stageKey = stage?.id ?? 'unassigned';
     const stageMatched = stageFilter.length === 0 || stageFilter.includes(stageKey);
     const assignedMatched = assignedToFilter.length === 0 || assignedToFilter.includes(customer.assigned_to ?? 'unassigned');
-    return stageMatched && assignedMatched && matchesDatePreset(customer.created_at);
+    const careMatched = matchesCareDays(customer.last_activity_at);
+    return stageMatched && assignedMatched && careMatched && matchesDatePreset(customer.created_at);
   });
 
   const customers = filteredByStageDate.filter((customer) => {
@@ -212,6 +222,7 @@ export default function CustomersPage() {
     setDatePreset('all');
     setFromDate('');
     setToDate('');
+    setCareDaysThreshold(null);
     setPage(1);
   };
 
@@ -456,7 +467,53 @@ export default function CustomersPage() {
                   )}
                 </div>
 
-                {(assignedToFilter.length > 0 || stageFilter.length > 0 || datePreset !== 'all' || fromDate || toDate) && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'care' ? null : 'care')}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-lg transition-all cursor-pointer ${
+                      careDaysThreshold !== null
+                        ? 'border-amber-300 bg-amber-50 text-amber-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Cần chăm sóc
+                    {careDaysThreshold !== null && (
+                      <span className="inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-bold bg-amber-500 text-white rounded-full">&gt;{careDaysThreshold}n</span>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  {openFilterDropdown === 'care' && (
+                    <div className="absolute top-9 left-0 z-50 w-52 bg-white border border-slate-200 rounded-lg shadow-lg p-2">
+                      <div className="space-y-1">
+                        <label className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="careDays"
+                            checked={careDaysThreshold === null}
+                            onChange={() => { setCareDaysThreshold(null); setPage(1); }}
+                            className="w-3.5 h-3.5 border-slate-300"
+                          />
+                          Tất cả
+                        </label>
+                        {[3, 7, 14, 30].map((days) => (
+                          <label key={days} className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="careDays"
+                              checked={careDaysThreshold === days}
+                              onChange={() => { setCareDaysThreshold(days); setPage(1); }}
+                              className="w-3.5 h-3.5 border-slate-300"
+                            />
+                            Không tương tác &gt; {days} ngày
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {(assignedToFilter.length > 0 || stageFilter.length > 0 || datePreset !== 'all' || fromDate || toDate || careDaysThreshold !== null) && (
                   <button
                     type="button"
                     onClick={() => { clearFilters(); setOpenFilterDropdown(null); }}

@@ -463,3 +463,51 @@ export interface CustomerCostSummary {
   count: number;
   by_type: Array<{ type: string; amount: number }>;
 }
+
+// ============================================================
+// Care Schedule
+// ============================================================
+
+export interface CareScheduleStep {
+  id: string;
+  setting_id: string;
+  name: string;
+  description: string | null;
+  days_offset: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CareScheduleSetting {
+  id: string;
+  customer_group_id: string;
+  cycle_days: number;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  customer_groups?: { id: string; name: string; code: string | null } | null;
+  care_schedule_steps?: CareScheduleStep[];
+}
+
+export interface CareScheduleEvent {
+  id: string;
+  customer_id: string;
+  step_id: string | null;
+  setting_id: string | null;
+  assigned_to: string | null;
+  scheduled_date: string;
+  status: 'pending' | 'done' | 'skipped' | 'rescheduled';
+  notes: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  original_date: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  customers?: { id: string; customer_name: string; phone_number: string | null; customer_group_id: string | null } | null;
+  care_schedule_steps?: { id: string; name: string; description: string | null; days_offset: number } | null;
+  care_schedule_settings?: { id: string; cycle_days: number; customer_groups?: { id: string; name: string } | null } | null;
+  profiles?: { display_name: string } | null;
+}
