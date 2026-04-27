@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { customerApi, profilesApi, pipelineApi, orderApi } from '@/api/client';
+import { customerApi, profilesApi, pipelineApi, orderApi, customerGroupApi } from '@/api/client';
 import { formatDate } from '@/lib/utils';
 import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, Order } from '@/types';
 import PipelineSettingsModal from './PipelineSettingsModal';
@@ -61,21 +61,25 @@ export default function CustomersPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const currentUser = useAuthStore((s) => s.user);
-  const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion' | 'reports'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion' | 'reports' | 'stats'>('list');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [groupFilter, setGroupFilter] = useState<string[]>([]);
   const [datePreset, setDatePreset] = useState<'all' | 'today' | '7d' | '30d' | 'this_month'>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [openFilterDropdown, setOpenFilterDropdown] = useState<'assigned' | 'stage' | 'date' | 'care' | null>(null);
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<'assigned' | 'stage' | 'date' | 'care' | 'group' | null>(null);
   const [careDaysThreshold, setCareDaysThreshold] = useState<number | null>(null);
   const filterBarRef = useRef<HTMLDivElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [quickExchangeCustomer, setQuickExchangeCustomer] = useState<Customer | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const PAGE_SIZE = 20;
 
   useEffect(() => {
@@ -89,6 +93,17 @@ export default function CustomersPage() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [openFilterDropdown]);
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, search, assignedToFilter, stageFilter, groupFilter, datePreset, fromDate, toDate, careDaysThreshold]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    const allSelected = pagedCustomers.length > 0 && pagedCustomers.every((c) => selectedIds.has(c.id));
+    const someSelected = pagedCustomers.some((c) => selectedIds.has(c.id));
+    selectAllRef.current.indeterminate = someSelected && !allSelected;
+  });
+
   // Staff list for assigned_to filter (shared cache with Tab 3)
   const { data: staffRes } = useQuery({
     queryKey: ['profiles-staff'],
@@ -96,6 +111,13 @@ export default function CustomersPage() {
     staleTime: 5 * 60 * 1000,
   });
   const staffList: StaffProfile[] = staffRes?.data?.data ?? [];
+
+  const { data: groupsRes } = useQuery({
+    queryKey: ['customer-groups'],
+    queryFn: () => customerGroupApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const groupList: Array<{ id: string; name: string }> = groupsRes?.data?.data ?? [];
 
   // Customer list query (only runs when on Tab 1)
   const { data: res, isLoading } = useQuery({
@@ -105,7 +127,7 @@ export default function CustomersPage() {
       limit: 1000,
     }),
     staleTime: 5 * 60 * 1000,
-    enabled: activeTab === 'list' || activeTab === 'reports',
+    enabled: activeTab === 'list' || activeTab === 'stats' || activeTab === 'reports',
   });
   const allCustomers: Customer[] = res?.data?.data ?? [];
 
@@ -113,7 +135,7 @@ export default function CustomersPage() {
     queryKey: ['pipeline-board'],
     queryFn: () => pipelineApi.getBoard(),
     staleTime: 60_000,
-    enabled: activeTab === 'list',
+    enabled: activeTab === 'list' || activeTab === 'stats',
   });
   const board: BoardResponse = boardRes?.data?.data ?? { columns: [], total_customers: 0 };
 
@@ -178,7 +200,8 @@ export default function CustomersPage() {
     const stageMatched = stageFilter.length === 0 || stageFilter.includes(stageKey);
     const assignedMatched = assignedToFilter.length === 0 || assignedToFilter.includes(customer.assigned_to ?? 'unassigned');
     const careMatched = matchesCareDays(customer.last_activity_at);
-    return stageMatched && assignedMatched && careMatched && matchesDatePreset(customer.created_at);
+    const groupMatched = groupFilter.length === 0 || groupFilter.includes(customer.customer_group_id ?? 'unassigned');
+    return stageMatched && assignedMatched && careMatched && groupMatched && matchesDatePreset(customer.created_at);
   });
 
   const customers = filteredByStageDate.filter((customer) => {
@@ -219,6 +242,7 @@ export default function CustomersPage() {
   const clearFilters = () => {
     setAssignedToFilter([]);
     setStageFilter([]);
+    setGroupFilter([]);
     setDatePreset('all');
     setFromDate('');
     setToDate('');
@@ -234,6 +258,21 @@ export default function CustomersPage() {
       queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
       setCustomerToDelete(null);
       toast.success('Đã xóa khách hàng');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể xóa khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map((id) => customerApi.delete(id))),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers-list-all'] });
+      queryClient.invalidateQueries({ queryKey: ['customers-all'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      toast.success('Đã xóa các khách hàng đã chọn');
     },
     onError: (error: any) => {
       toast.error('Không thể xóa khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
@@ -279,7 +318,7 @@ export default function CustomersPage() {
 
       {/* Tab Bar — same pattern as AnalyticsPage.tsx */}
       <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
-        {(['list', 'journey', 'conversion'] as const).map(tab => (
+        {(['list', 'stats', 'journey', 'conversion'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-[13px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === tab
@@ -287,6 +326,7 @@ export default function CustomersPage() {
                 : 'text-slate-500 hover:text-slate-700'
             }`}>
             {tab === 'list' ? 'Danh sách khách hàng'
+              : tab === 'stats' ? 'Thống kê'
               : tab === 'journey' ? 'Hành trình khách hàng'
               : tab === 'conversion' ? 'Tỷ lệ chuyển đổi'
               : 'Báo cáo'}
@@ -513,7 +553,51 @@ export default function CustomersPage() {
                   )}
                 </div>
 
-                {(assignedToFilter.length > 0 || stageFilter.length > 0 || datePreset !== 'all' || fromDate || toDate || careDaysThreshold !== null) && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenFilterDropdown(openFilterDropdown === 'group' ? null : 'group')}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-lg transition-all cursor-pointer ${
+                      groupFilter.length > 0
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Nhóm khách hàng
+                    {groupFilter.length > 0 && (
+                      <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-indigo-600 text-white rounded-full">{groupFilter.length}</span>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  {openFilterDropdown === 'group' && (
+                    <div className="absolute top-9 left-0 z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-2">
+                      <div className="space-y-1 max-h-52 overflow-y-auto">
+                        <label className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={groupFilter.includes('unassigned')}
+                            onChange={() => toggleMultiFilter('unassigned', groupFilter, setGroupFilter)}
+                            className="w-3.5 h-3.5 rounded border-slate-300"
+                          />
+                          Chưa có nhóm
+                        </label>
+                        {groupList.map((g) => (
+                          <label key={g.id} className="flex items-center gap-2 text-[12px] text-slate-700 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={groupFilter.includes(g.id)}
+                              onChange={() => toggleMultiFilter(g.id, groupFilter, setGroupFilter)}
+                              className="w-3.5 h-3.5 rounded border-slate-300"
+                            />
+                            {g.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {(assignedToFilter.length > 0 || stageFilter.length > 0 || groupFilter.length > 0 || datePreset !== 'all' || fromDate || toDate || careDaysThreshold !== null) && (
                   <button
                     type="button"
                     onClick={() => { clearFilters(); setOpenFilterDropdown(null); }}
@@ -527,48 +611,23 @@ export default function CustomersPage() {
             </div>
 
             {/* Thêm mới button */}
-            <button
-              onClick={() => { setEditingCustomer(null); setShowForm(true); }}
-              className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              Thêm khách hàng
-            </button>
-          </div>
-
-          {/* Counters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng KH theo lọc</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{customers.length}</p>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">KH hôm nay</p>
-              <p className="text-2xl font-bold text-indigo-700 mt-1">
-                {customers.filter((c) => new Date(c.created_at) >= startOfToday).length}
-              </p>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">KH 7 ngày gần đây</p>
-              <p className="text-2xl font-bold text-emerald-700 mt-1">
-                {customers.filter((c) => new Date(c.created_at) >= sevenDaysAgo).length}
-              </p>
-            </div>
-          </div>
-
-          {/* Daily Bar Chart */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-            <h3 className="text-[14px] font-bold text-slate-800 mb-3">So sánh lượng khách theo ngày</h3>
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyBarData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <Tooltip formatter={(value) => [value, 'Số khách']} />
-                  <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="flex items-center gap-2 shrink-0">
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-sm shadow-red-200 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Xóa {selectedIds.size} khách hàng
+                </button>
+              )}
+              <button
+                onClick={() => { setEditingCustomer(null); setShowForm(true); }}
+                className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Thêm khách hàng
+              </button>
             </div>
           </div>
 
@@ -578,6 +637,21 @@ export default function CustomersPage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b bg-slate-50/50">
+                    <th className="py-3.5 px-4 w-10">
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        className="w-3.5 h-3.5 rounded border-slate-300 cursor-pointer"
+                        checked={pagedCustomers.length > 0 && pagedCustomers.every((c) => selectedIds.has(c.id))}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(new Set(pagedCustomers.map((c) => c.id)));
+                          } else {
+                            setSelectedIds(new Set());
+                          }
+                        }}
+                      />
+                    </th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Khách hàng</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Số điện thoại</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Email</th>
@@ -594,20 +668,39 @@ export default function CustomersPage() {
                   {isLoading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
-                        <td colSpan={9} className="py-4 px-4">
+                        <td colSpan={10} className="py-4 px-4">
                           <div className="h-6 bg-slate-50 animate-pulse rounded-lg" />
                         </td>
                       </tr>
                     ))
                   ) : pagedCustomers.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-12 text-[14px] text-slate-400">
+                      <td colSpan={10} className="text-center py-12 text-[14px] text-slate-400">
                         Không tìm thấy khách hàng nào
                       </td>
                     </tr>
                   ) : (
                     pagedCustomers.map((customer) => (
                       <tr key={customer.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => navigate(`/admin/customers/${customer.id}`)}>
+                        <td className="py-4 px-4 w-10" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="w-3.5 h-3.5 rounded border-slate-300 cursor-pointer"
+                            checked={selectedIds.has(customer.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) {
+                                  next.add(customer.id);
+                                } else {
+                                  next.delete(customer.id);
+                                }
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0 border border-indigo-100">
@@ -703,6 +796,49 @@ export default function CustomersPage() {
         </div>
       )}
 
+      {/* Tab: Thống kê */}
+      {activeTab === 'stats' && (
+        <div className="space-y-4">
+          <p className="text-[14px] text-slate-500 mt-1">Thống kê khách hàng</p>
+
+          {/* Counters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng KH theo lọc</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{customers.length}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">KH hôm nay</p>
+              <p className="text-2xl font-bold text-indigo-700 mt-1">
+                {customers.filter((c) => new Date(c.created_at) >= startOfToday).length}
+              </p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">KH 7 ngày gần đây</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {customers.filter((c) => new Date(c.created_at) >= sevenDaysAgo).length}
+              </p>
+            </div>
+          </div>
+
+          {/* Daily Bar Chart */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+            <h3 className="text-[14px] font-bold text-slate-800 mb-3">So sánh lượng khách theo ngày</h3>
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyBarData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip formatter={(value) => [value, 'Số khách']} />
+                  <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tab 2: Journey */}
       {activeTab === 'journey' && <CustomerJourneyTab />}
 
@@ -760,6 +896,43 @@ export default function CustomersPage() {
                 className="flex-1 h-10 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-red-200"
               >
                 {deleteMutation.isPending ? 'Đang xóa...' : 'Xóa khách hàng'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showBulkDeleteConfirm && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="flex flex-col items-center px-6 pt-7 pb-5 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className="text-[16px] font-bold text-slate-900 mb-2">Xác nhận xóa hàng loạt</h3>
+              <p className="text-[13px] text-slate-500 leading-relaxed">
+                Bạn có chắc chắn muốn xóa {selectedIds.size} khách hàng đã chọn không?
+                <br />
+                Hành động này không thể hoàn tác.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-6 pb-6">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={bulkDeleteMutation.isPending}
+                className="flex-1 h-10 text-[13px] font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+                disabled={bulkDeleteMutation.isPending}
+                className="flex-1 h-10 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-red-200"
+              >
+                {bulkDeleteMutation.isPending ? 'Đang xóa...' : `Xóa ${selectedIds.size} khách hàng`}
               </button>
             </div>
           </div>

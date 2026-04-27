@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productApi, uploadApi } from '@/api/client';
@@ -13,15 +13,22 @@ import {
   X,
   Upload,
   Package,
+  AlertTriangle,
 } from 'lucide-react';
 import type { Product } from '@/types';
+import { useToast } from '@/components/ui/toast';
 
 export default function ProductsPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<{ id: string; name: string } | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const { data: res, isLoading } = useQuery({
     queryKey: ['products', { page, search }],
@@ -32,9 +39,30 @@ export default function ProductsPage() {
   const products: Product[] = res?.data?.data ?? [];
   const meta = res?.data?.meta;
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, search]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    const total = products.length;
+    const selected = products.filter((p) => selectedIds.has(p.id)).length;
+    selectAllRef.current.indeterminate = selected > 0 && selected < total;
+  }, [selectedIds, products]);
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => productApi.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map((id) => productApi.delete(id))),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      toast.success(`Đã xóa ${selectedIds.size} sản phẩm thành công`);
+    },
   });
 
   const saveMutation = useMutation({
@@ -55,10 +83,40 @@ export default function ProductsPage() {
   };
 
   const handleDelete = (id: string, name: string) => {
-    if (confirm(`Xóa sản phẩm "${name}"?`)) {
-      deleteMutation.mutate(id);
+    setProductToDelete({ id, name });
+  };
+
+  const confirmSingleDelete = () => {
+    if (!productToDelete) return;
+    deleteMutation.mutate(productToDelete.id, {
+      onSuccess: () => {
+        setProductToDelete(null);
+        toast.success('Đã xóa sản phẩm thành công');
+      },
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(products.map((p) => p.id)));
+    } else {
+      setSelectedIds(new Set());
     }
   };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const allSelected = products.length > 0 && products.every((p) => selectedIds.has(p.id));
 
   return (
     <div className="space-y-4">
@@ -67,13 +125,24 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Sản phẩm</h1>
           <p className="text-[14px] text-slate-500 mt-1">Quản lý danh mục & giá sản phẩm ({meta?.total ?? 0})</p>
         </div>
-        <button
-          onClick={() => { setEditingProduct(null); setShowForm(true); }}
-          className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Thêm sản phẩm
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-sm shadow-red-200 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              Xóa {selectedIds.size} sản phẩm
+            </button>
+          )}
+          <button
+            onClick={() => { setEditingProduct(null); setShowForm(true); }}
+            className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Thêm sản phẩm
+          </button>
+        </div>
       </div>
 
       {/* Search & Stats */}
@@ -96,6 +165,15 @@ export default function ProductsPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b bg-slate-50/50">
+                <th className="py-3.5 px-4 w-10">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer accent-indigo-600"
+                  />
+                </th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-28">SKU</th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Tên sản phẩm</th>
                 <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Danh mục</th>
@@ -109,20 +187,28 @@ export default function ProductsPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={7} className="py-4 px-4">
+                    <td colSpan={8} className="py-4 px-4">
                       <div className="h-10 bg-slate-50 animate-pulse rounded-lg" />
                     </td>
                   </tr>
                 ))
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-[14px] text-slate-400">
+                  <td colSpan={8} className="text-center py-12 text-[14px] text-slate-400">
                     Không tìm thấy sản phẩm nào
                   </td>
                 </tr>
               ) : (
                 products.map((product) => (
                   <tr key={product.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="py-4 px-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(product.id)}
+                        onChange={(e) => handleSelectOne(product.id, e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer accent-indigo-600"
+                      />
+                    </td>
                     <td className="py-4 px-4">
                       <span className="font-mono text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
                         {product.sku}
@@ -232,6 +318,84 @@ export default function ProductsPage() {
           isLoading={saveMutation.isPending}
         />
       )}
+
+      {/* Single Delete Confirm Dialog */}
+      {productToDelete &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+              <div className="flex flex-col items-center px-6 pt-7 pb-5 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+                  <AlertTriangle className="w-7 h-7 text-red-500" />
+                </div>
+                <h3 className="text-[16px] font-bold text-slate-900 mb-2">Xác nhận xóa</h3>
+                <p className="text-[13px] text-slate-500 leading-relaxed">
+                  Bạn có chắc chắn muốn xóa sản phẩm &ldquo;{productToDelete.name}&rdquo; không?
+                  <br />
+                  Hành động này không thể hoàn tác.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={() => setProductToDelete(null)}
+                  disabled={deleteMutation.isPending}
+                  className="flex-1 h-10 text-[13px] font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmSingleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="flex-1 h-10 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-red-200"
+                >
+                  {deleteMutation.isPending ? 'Đang xóa...' : 'Xóa sản phẩm'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Bulk Delete Confirm Dialog */}
+      {showBulkDeleteConfirm &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+              <div className="flex flex-col items-center px-6 pt-7 pb-5 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+                  <AlertTriangle className="w-7 h-7 text-red-500" />
+                </div>
+                <h3 className="text-[16px] font-bold text-slate-900 mb-2">Xác nhận xóa</h3>
+                <p className="text-[13px] text-slate-500 leading-relaxed">
+                  Bạn có chắc chắn muốn xóa {selectedIds.size} sản phẩm đã chọn không?
+                  <br />
+                  Hành động này không thể hoàn tác.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 px-6 pb-6">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  disabled={bulkDeleteMutation.isPending}
+                  className="flex-1 h-10 text-[13px] font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+                  disabled={bulkDeleteMutation.isPending}
+                  className="flex-1 h-10 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-red-200"
+                >
+                  {bulkDeleteMutation.isPending ? 'Đang xóa...' : 'Xóa sản phẩm'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

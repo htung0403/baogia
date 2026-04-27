@@ -346,6 +346,9 @@ export const pipelineApi = {
   listAppointments: (customerId: string) =>
     api.get(`/pipeline/activities/${customerId}`, { params: { type: 'meeting' } }),
 
+  listCareTasks: (customerId: string) =>
+    api.get(`/pipeline/activities/${customerId}`, { params: { type: 'task' } }),
+
   createActivity: (data: {
     customer_id: string; activity_type: string; title: string;
     description?: string | null; assigned_to?: string | null; related_project?: string | null;
@@ -365,7 +368,23 @@ export const pipelineApi = {
       activity_type: 'meeting',
     }),
 
+  createCareTask: (data: {
+    customer_id: string;
+    title: string;
+    description?: string | null;
+    scheduled_at: string;
+    status?: 'pending' | 'done' | 'cancelled';
+    assigned_to?: string | null;
+  }) =>
+    api.post('/pipeline/activities', {
+      ...data,
+      activity_type: 'task',
+    }),
+
   updateAppointmentStatus: (activityId: string, status: 'pending' | 'done' | 'cancelled') =>
+    api.patch(`/pipeline/activities/${activityId}/status`, { status }),
+
+  updateCareTaskStatus: (activityId: string, status: 'pending' | 'done' | 'cancelled') =>
     api.patch(`/pipeline/activities/${activityId}/status`, { status }),
 
   // Quotes
@@ -486,7 +505,10 @@ export const careScheduleApi = {
   generateEvents: (data: { customer_group_id: string; horizon_days?: number }) =>
     api.post('/care-schedule/events/generate', data),
 
-  listEvents: (params: { month: string; group_id?: string; assigned_to?: string; status?: string }) =>
+  createEvent: (data: { customer_id: string; scheduled_date: string; notes?: string; assigned_to?: string | null }) =>
+    api.post('/care-schedule/events', data),
+
+  listEvents: (params: { month?: string; customer_id?: string; group_id?: string; assigned_to?: string; status?: string }) =>
     api.get('/care-schedule/events', { params }),
 
   updateEvent: (id: string, data: {

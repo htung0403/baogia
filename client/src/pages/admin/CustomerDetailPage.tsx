@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { customerApi, profilesApi, pipelineApi } from '@/api/client';
-import { formatDate, formatDuration, formatCurrency } from '@/lib/utils';
-import type { Customer, CustomerActivity } from '@/types';
+import { customerApi, profilesApi, pipelineApi, careScheduleApi } from '@/api/client';
+import { formatDate, formatDuration } from '@/lib/utils';
+import type { Customer, CustomerActivity, CareScheduleEvent } from '@/types';
 // @ts-expect-error unused import
 import { CrmStatCard } from '@/components/ui/CrmStatCard';
 import { useToast } from '@/components/ui/toast';
@@ -49,7 +49,7 @@ const COST_TYPE_LABELS: Record<string, string> = {
   other: 'Khác',
 };
 
-type Tab = 'trao-doi' | 'giao-dich' | 'lich-hen' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'chi-phi' | 'lich-su-trang-thai';
+type Tab = 'trao-doi' | 'giao-dich' | 'lich-hen' | 'lich-cham-soc' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'chi-phi' | 'lich-su-trang-thai';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -137,6 +137,7 @@ const TAB_LIST: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'giao-dich', label: 'Giao dịch', icon: ShoppingCart },
   { id: 'lich-su-trang-thai', label: 'Lịch sử chuyển trạng thái', icon: Clock },
   { id: 'lich-hen', label: 'Lịch hẹn', icon: Calendar },
+  { id: 'lich-cham-soc', label: 'Lịch chăm sóc', icon: Calendar },
   // { id: 'chi-phi', label: 'Chi phí', icon: CreditCard },
 ];
 
@@ -582,6 +583,7 @@ export default function CustomerDetailPage() {
           )}
           {activeTab === 'lich-su-trang-thai' && <TabStageHistory history={stageHistory} />}
           {activeTab === 'lich-hen' && <TabLichHen customerId={customer.id} />}
+          {activeTab === 'lich-cham-soc' && <TabLichChamSoc customerId={customer.id} />}
           {activeTab === 'chi-phi' && <TabChiPhi customerId={customer.id} customerName={customer.customer_name} />}
           {['co-hoi', 'gioi-thieu'].includes(activeTab) && (
             <TabPlaceholder id={activeTab} />
@@ -1884,6 +1886,207 @@ function TabLichHen({ customerId }: { customerId: string }) {
         <div className="space-y-2">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-4">Đã qua ({past.length})</p>
           {past.map(appt => <AppointmentCard key={appt.id} appt={appt} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabLichChamSoc({ customerId }: { customerId: string }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const { data: profilesRes } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: () => profilesApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+  // @ts-expect-error unused variable
+  const profiles = profilesRes?.data?.data || [];
+
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState<{ scheduled_at: Date | undefined; description: string }>({
+    scheduled_at: undefined,
+    description: '',
+  });
+
+  const { data: apptRes, isLoading } = useQuery({
+    queryKey: ['care-events', customerId],
+    queryFn: () => careScheduleApi.listEvents({ customer_id: customerId }),
+    enabled: !!customerId,
+  });
+  const tasks: CareScheduleEvent[] = apptRes?.data?.data || [];
+
+  const upcoming = tasks.filter(a => a.status === 'pending' || a.status === 'rescheduled');
+  const past = tasks.filter(a => a.status === 'done' || a.status === 'skipped');
+
+  const createMutation = useMutation({
+    mutationFn: () => careScheduleApi.createEvent({
+      customer_id: customerId,
+      notes: formData.description.trim() || undefined,
+      scheduled_date: new Date(formData.scheduled_at!).toISOString(),
+      assigned_to: null,
+    }),
+    onSuccess: () => {
+      setShowForm(false);
+      setFormData({ scheduled_at: undefined, description: '' });
+      queryClient.invalidateQueries({ queryKey: ['care-events', customerId] });
+      queryClient.invalidateQueries({ queryKey: ['care-events'] });
+      toast.success('Đã tạo lịch chăm sóc');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể tạo lịch chăm sóc', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'done' | 'skipped' }) =>
+      careScheduleApi.updateEvent(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['care-events', customerId] });
+      queryClient.invalidateQueries({ queryKey: ['care-events'] });
+      toast.success('Đã cập nhật trạng thái');
+    },
+  });
+
+  const statusBadge = (status: string | null) => {
+    const map: Record<string, { label: string; className: string }> = {
+      pending: { label: 'Chờ diễn ra', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+      rescheduled: { label: 'Đã dời lịch', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+      done:    { label: 'Đã xong',     className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+      skipped: { label: 'Đã bỏ qua',   className: 'bg-slate-100 text-slate-700 border-slate-200' },
+    };
+    const s = map[status ?? 'pending'] ?? map.pending;
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${s.className}`}>
+        {s.label}
+      </span>
+    );
+  };
+
+  const TaskCard = ({ task }: { task: CareScheduleEvent }) => (
+    <div className="border border-slate-200 rounded-xl p-4 bg-white hover:shadow-sm transition-shadow">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 text-[12px] text-slate-500">
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{formatDate(task.scheduled_date || task.created_at)}</span>
+          </div>
+          <p className="text-[14px] font-bold text-slate-800 mt-1">Lịch chăm sóc</p>
+          {task.profiles?.display_name && (
+            <div className="flex items-center gap-1.5 mt-0.5 text-[12px] text-slate-400">
+              <User className="w-3.5 h-3.5" />
+              <span>{task.profiles.display_name}</span>
+            </div>
+          )}
+          {task.notes && (
+            <p className="mt-2 text-[13px] text-slate-600 line-clamp-3">{task.notes}</p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {statusBadge(task.status)}
+          {(task.status === 'pending' || task.status === 'rescheduled') && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => statusMutation.mutate({ id: task.id, status: 'done' })}
+                className="px-2 py-0.5 text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+              >
+                Xong
+              </button>
+              <button
+                onClick={() => statusMutation.mutate({ id: task.id, status: 'skipped' })}
+                className="px-2 py-0.5 text-[11px] font-bold bg-slate-50 text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Bỏ qua
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[14px] font-bold text-slate-800">
+          Lịch chăm sóc ({tasks.length})
+        </h3>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+        >
+          <Clock className="w-3.5 h-3.5" />
+          {showForm ? 'Đóng' : 'Thêm lịch chăm sóc'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+          <h4 className="text-[13px] font-bold text-slate-700">Tạo lịch chăm sóc mới</h4>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-1">
+              <label className="text-[12px] font-medium text-slate-600">Ngày giờ *</label>
+              <DateTimePicker24h
+                value={formData.scheduled_at}
+                onChange={(date) => setFormData(p => ({ ...p, scheduled_at: date }))}
+                placeholder="Chọn ngày giờ"
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[12px] font-medium text-slate-600">Nội dung chăm sóc *</label>
+              <input
+                type="text"
+                value={formData.description}
+                onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
+                placeholder="Nhập nội dung công việc..."
+                className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowForm(false)}
+              className="h-8 px-3 text-[12px] border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => createMutation.mutate()}
+              disabled={!formData.scheduled_at || !formData.description.trim() || createMutation.isPending}
+              className="h-8 px-4 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {createMutation.isPending ? 'Đang lưu...' : 'Tạo lịch'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="flex justify-center py-10">
+          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {!isLoading && tasks.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 bg-white border border-slate-200 rounded-xl">
+          <Calendar className="w-10 h-10 text-slate-300 mb-3" />
+          <p className="text-[14px] font-bold text-slate-500">Chưa có lịch chăm sóc nào</p>
+          <p className="text-[12px] text-slate-400 mt-1">Nhấn "Thêm lịch chăm sóc" để lên lịch đầu tiên</p>
+        </div>
+      )}
+
+      {upcoming.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Sắp diễn ra ({upcoming.length})</p>
+          {upcoming.map(task => <TaskCard key={task.id} task={task} />)}
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-4">Đã qua ({past.length})</p>
+          {past.map(task => <TaskCard key={task.id} task={task} />)}
         </div>
       )}
     </div>

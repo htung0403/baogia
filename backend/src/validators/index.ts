@@ -353,8 +353,15 @@ export const updateCareSettingSchema = z.object({
 });
 
 export const generateCareEventsSchema = z.object({
-  customer_group_id: z.string().uuid(),
-  horizon_days: z.number().int().min(1).max(365).optional().default(90),
+  customer_group_id: z.string().uuid('ID nhóm khách hàng không hợp lệ'),
+  horizon_days: z.number().int().min(1).max(90).optional(),
+});
+
+export const createCareEventSchema = z.object({
+  customer_id: z.string().uuid('ID khách hàng không hợp lệ'),
+  scheduled_date: z.string(),
+  notes: z.string().optional().nullable(),
+  assigned_to: z.string().uuid().optional().nullable(),
 });
 
 export const updateCareEventSchema = z.object({

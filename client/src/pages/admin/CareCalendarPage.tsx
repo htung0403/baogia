@@ -6,10 +6,11 @@ import {
   addMonths, subMonths, isToday,
 } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import { careScheduleApi } from '@/api/client';
-import type { CareScheduleEvent } from '@/types';
+import { careScheduleApi, customerApi } from '@/api/client';
+import type { CareScheduleEvent, Customer } from '@/types';
 import { useToast } from '@/components/ui/toast';
-import { ChevronLeft, ChevronRight, X, Check, CalendarClock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Check, CalendarClock, Plus } from 'lucide-react';
+import { DateTimePicker24h } from '@/components/ui/DateTimePicker';
 
 export default function CareCalendarPage() {
   const queryClient = useQueryClient();
@@ -20,6 +21,16 @@ export default function CareCalendarPage() {
   const [actionEvent, setActionEvent] = useState<{ event: CareScheduleEvent; type: 'done' | 'reschedule' } | null>(null);
   const [doneNotes, setDoneNotes] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState<{
+    customer_id: string;
+    scheduled_date: Date | undefined;
+    notes: string;
+  }>({
+    customer_id: '',
+    scheduled_date: undefined,
+    notes: '',
+  });
 
   const monthKey = format(currentMonth, 'yyyy-MM');
 
@@ -29,10 +40,21 @@ export default function CareCalendarPage() {
   });
   const events: CareScheduleEvent[] = res?.data?.data ?? [];
 
+  const { data: customerRes } = useQuery({
+    queryKey: ['customers-list-all'],
+    queryFn: () => customerApi.list({ limit: 1000 }),
+    enabled: showAddModal,
+  });
+  const customers: Customer[] = customerRes?.data?.data ?? [];
+
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CareScheduleEvent[]>();
     events.forEach(event => {
-      const dateStr = event.scheduled_date;
+      const hasTime = event.scheduled_date.includes('T') && !event.scheduled_date.endsWith('00:00:00.000Z');
+      const dateStr = hasTime
+        ? format(new Date(event.scheduled_date), 'yyyy-MM-dd')
+        : event.scheduled_date.split('T')[0];
+
       if (!map.has(dateStr)) map.set(dateStr, []);
       map.get(dateStr)!.push(event);
     });
@@ -46,6 +68,23 @@ export default function CareCalendarPage() {
       queryClient.invalidateQueries({ queryKey: ['care-events', monthKey] });
       setActionEvent(null);
       toast.success('Cập nhật lịch chăm sóc thành công');
+    },
+    onError: (error: any) => {
+      toast.error('Lỗi', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
+  const createEventMutation = useMutation({
+    mutationFn: () => careScheduleApi.createEvent({
+      customer_id: addForm.customer_id,
+      scheduled_date: addForm.scheduled_date!.toISOString(),
+      notes: addForm.notes || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['care-events'] });
+      setShowAddModal(false);
+      setAddForm({ customer_id: '', scheduled_date: undefined, notes: '' });
+      toast.success('Thêm lịch chăm sóc thành công');
     },
     onError: (error: any) => {
       toast.error('Lỗi', error?.response?.data?.message || 'Vui lòng thử lại');
@@ -96,6 +135,21 @@ export default function CareCalendarPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Thêm lịch chăm sóc
+          </button>
+          <button
+            onClick={() => setCurrentMonth(new Date())}
+            className="h-8 px-3 text-[12px] font-medium border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer text-slate-600"
+          >
+            Hôm nay
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
             onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
             className="p-1.5 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
           >
@@ -111,12 +165,6 @@ export default function CareCalendarPage() {
             <ChevronRight className="w-4 h-4 text-slate-600" />
           </button>
         </div>
-        <button
-          onClick={() => setCurrentMonth(new Date())}
-          className="h-8 px-3 text-[12px] font-medium border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer text-slate-600"
-        >
-          Hôm nay
-        </button>
       </div>
 
       <div className="flex gap-4 text-[12px] text-slate-500">
@@ -414,6 +462,74 @@ export default function CareCalendarPage() {
                 className="h-8 px-3 text-[12px] font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 transition-colors cursor-pointer"
               >
                 {updateEventMutation.isPending ? 'Đang lưu...' : 'Xác nhận dời lịch'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Add Modal */}
+      {showAddModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50/50">
+              <h3 className="text-[14px] font-bold text-slate-800">Thêm lịch chăm sóc</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-bold text-slate-700">Khách hàng *</label>
+                <select
+                  value={addForm.customer_id}
+                  onChange={(e) => setAddForm({ ...addForm, customer_id: e.target.value })}
+                  className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Chọn khách hàng...</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.customer_name} {c.phone_number ? `- ${c.phone_number}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-bold text-slate-700">Ngày giờ hẹn *</label>
+                <DateTimePicker24h
+                  value={addForm.scheduled_date}
+                  onChange={(date) => setAddForm({ ...addForm, scheduled_date: date })}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-bold text-slate-700">Nội dung chăm sóc</label>
+                <input
+                  type="text"
+                  value={addForm.notes}
+                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+                  placeholder="Nhập nội dung cần chăm sóc..."
+                  className="w-full h-9 px-3 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t bg-slate-50/50">
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="h-8 px-3 text-[12px] font-medium border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => createEventMutation.mutate()}
+                disabled={createEventMutation.isPending || !addForm.customer_id || !addForm.scheduled_date}
+                className="h-8 px-4 text-[12px] font-bold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors cursor-pointer"
+              >
+                {createEventMutation.isPending ? 'Đang lưu...' : 'Lưu lại'}
               </button>
             </div>
           </div>
