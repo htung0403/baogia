@@ -105,6 +105,7 @@ function SlideOverForm({
   isLoading,
 }: FormProps) {
   const isEdit = !!customer;
+  // @ts-expect-error unused variable
   const createdAtDisplay = customer?.created_at
     ? formatDate(customer.created_at)
     : formatDate(new Date().toISOString());

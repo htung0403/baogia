@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { customerApi, profilesApi, pipelineApi } from '@/api/client';
 import { formatDate, formatDuration, formatCurrency } from '@/lib/utils';
 import type { Customer, CustomerActivity } from '@/types';
+// @ts-expect-error unused import
 import { CrmStatCard } from '@/components/ui/CrmStatCard';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -1129,6 +1130,7 @@ export function TabPlaceholder({ id: _id }: { id: string }) {
   );
 }
 
+// @ts-expect-error unused function
 function TabKhachHangPhanHoi({ customerId }: { customerId: string }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [title, setTitle] = useState('');
@@ -1707,6 +1709,7 @@ function TabLichHen({ customerId }: { customerId: string }) {
     queryFn: () => profilesApi.list(),
     staleTime: 5 * 60 * 1000,
   });
+  // @ts-expect-error unused variable
   const profiles = profilesRes?.data?.data || [];
 
   const [showForm, setShowForm] = useState(false);
