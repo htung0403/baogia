@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { customerApi, profilesApi, pipelineApi, orderApi } from '@/api/client';
-import { formatDate, formatPhoneE164 } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, Order } from '@/types';
 import PipelineSettingsModal from './PipelineSettingsModal';
+import CustomerSlideOver from '@/components/customers/CustomerSlideOver';
 import { useToast } from '@/components/ui/toast';
 import {
   Plus,
@@ -21,6 +22,7 @@ import {
   Download,
   MessageSquare,
   DollarSign,
+  AlertTriangle,
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
 import {
@@ -72,6 +74,7 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [quickExchangeCustomer, setQuickExchangeCustomer] = useState<Customer | null>(null);
+  const [customerToDelete, setCustomerToDelete] = useState<{ id: string; name: string } | null>(null);
   const PAGE_SIZE = 20;
 
   useEffect(() => {
@@ -215,7 +218,10 @@ export default function CustomersPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => customerApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['customers-list-all'] });
+      queryClient.invalidateQueries({ queryKey: ['customers-all'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+      setCustomerToDelete(null);
       toast.success('Đã xóa khách hàng');
     },
     onError: (error: any) => {
@@ -253,9 +259,7 @@ export default function CustomersPage() {
   });
 
   const handleDelete = (id: string, name: string) => {
-    if (confirm(`Xóa khách hàng "${name}"?`)) {
-      deleteMutation.mutate(id);
-    }
+    setCustomerToDelete({ id, name });
   };
 
   return (
@@ -264,7 +268,7 @@ export default function CustomersPage() {
 
       {/* Tab Bar — same pattern as AnalyticsPage.tsx */}
       <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
-        {(['list', 'journey', 'conversion', 'reports'] as const).map(tab => (
+        {(['list', 'journey', 'conversion'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-[13px] font-bold rounded-lg transition-all cursor-pointer ${
               activeTab === tab
@@ -525,7 +529,7 @@ export default function CustomersPage() {
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Chăm sóc cuối</th>
                     <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Trao đổi gần nhất</th>
                     <th className="text-center py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Tài khoản</th>
-                    <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Ngày tạo</th>
+                    <th className="text-left py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px]">Nhóm khách hàng</th>
                     <th className="text-right py-3.5 px-4 font-bold text-slate-700 uppercase tracking-wider text-[11px] w-24"></th>
                   </tr>
                 </thead>
@@ -579,8 +583,8 @@ export default function CustomersPage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-4 px-4 text-[12px] text-slate-400 tabular-nums">
-                          {formatDate(customer.created_at)}
+                        <td className="py-4 px-4 text-[12px] text-slate-500">
+                          {customer.customer_groups?.name || 'Chưa có'}
                         </td>
                         <td className="py-4 px-4 text-right">
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -651,23 +655,59 @@ export default function CustomersPage() {
       {/* Tab 4: Reports */}
       {activeTab === 'reports' && <ReportsTab allCustomers={allCustomers} staffList={staffList} />}
 
-      {/* Customer Form Modal — UNCHANGED */}
-      {showForm && (
-        <CustomerFormModal
-          customer={editingCustomer}
-          staffList={staffList}
-          currentUserId={currentUser?.id}
-          onSave={(data) => saveMutation.mutate({ id: editingCustomer?.id, body: data })}
-          onClose={() => { setShowForm(false); setEditingCustomer(null); }}
-          isLoading={saveMutation.isPending}
-        />
-      )}
+      <CustomerSlideOver
+        isOpen={showForm}
+        customer={editingCustomer}
+        staffList={staffList}
+        currentUserId={currentUser?.id}
+        onSave={(data) => saveMutation.mutate({ id: editingCustomer?.id, body: data })}
+        onClose={() => { setShowForm(false); setEditingCustomer(null); }}
+        isLoading={saveMutation.isPending}
+      />
 
       {quickExchangeCustomer && (
         <QuickExchangeModal
           customer={quickExchangeCustomer}
           onClose={() => setQuickExchangeCustomer(null)}
         />
+      )}
+
+      {customerToDelete && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="flex flex-col items-center px-6 pt-7 pb-5 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className="text-[16px] font-bold text-slate-900 mb-2">Xác nhận xóa</h3>
+              <p className="text-[13px] text-slate-500 leading-relaxed">
+                Bạn có chắc chắn muốn xóa khách hàng{' '}
+                <span className="font-bold text-slate-800">"{customerToDelete.name}"</span> không?
+                <br />
+                Hành động này không thể hoàn tác.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-6 pb-6">
+              <button
+                type="button"
+                onClick={() => setCustomerToDelete(null)}
+                disabled={deleteMutation.isPending}
+                className="flex-1 h-10 text-[13px] font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate(customerToDelete.id)}
+                disabled={deleteMutation.isPending}
+                className="flex-1 h-10 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-red-200"
+              >
+                {deleteMutation.isPending ? 'Đang xóa...' : 'Xóa khách hàng'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -935,16 +975,15 @@ function CustomerJourneyTab() {
         </div>
       )}
       
-      {showForm && (
-        <CustomerFormModal
-          customer={null}
-          staffList={staffList}
-          currentUserId={currentUser?.id}
-          onSave={(data) => saveMutation.mutate({ body: data })}
-          onClose={() => { setShowForm(false); setSelectedStage(null); }}
-          isLoading={saveMutation.isPending}
-        />
-      )}
+      <CustomerSlideOver
+        isOpen={showForm}
+        customer={null}
+        staffList={staffList}
+        currentUserId={currentUser?.id}
+        onSave={(data) => saveMutation.mutate({ body: data })}
+        onClose={() => { setShowForm(false); setSelectedStage(null); }}
+        isLoading={saveMutation.isPending}
+      />
 
       {showPipelineSettings && (
         <PipelineSettingsModal onClose={() => setShowPipelineSettings(false)} />
@@ -1301,282 +1340,6 @@ function FunnelStep({ step, name, count, rows, isRevenue }: {
         )}
       </div>
     </div>
-  );
-}
-
-// ============================================================
-// Customer Form Modal — DO NOT MODIFY THIS SECTION
-// ============================================================
-function CustomerFormModal({
-  customer,
-  staffList,
-  currentUserId,
-  onSave,
-  onClose,
-  isLoading,
-}: {
-  customer: Customer | null;
-  staffList?: StaffProfile[];
-  currentUserId?: string;
-  onSave: (data: Record<string, unknown>) => void;
-  onClose: () => void;
-  isLoading: boolean;
-}) {
-  const isEdit = !!customer;
-  const createdAtDisplay = customer?.created_at ? formatDate(customer.created_at) : formatDate(new Date().toISOString());
-  const [formData, setFormData] = useState({
-    customer_name: customer?.customer_name ?? '',
-    phone_number: customer?.phone_number ?? '',
-    email: customer?.email ?? '',
-    address: customer?.address ?? '',
-    notes: customer?.notes ?? '',
-    assigned_to: customer?.assigned_to ?? currentUserId ?? '',
-    create_account: false,
-    account_phone: '',
-    account_password: '',
-    initial_cost: '',
-    initial_cost_description: '',
-    initial_cost_type: 'other',
-  });
-
-  const updateField = (field: string, value: unknown) => {
-    setFormData((prev) => {
-      const next = { ...prev, [field]: value };
-      
-      // Auto-fill logic: If enabling account creation and account_phone is empty, 
-      // take the value from phone_number
-      if (field === 'create_account' && value === true && !next.account_phone) {
-        next.account_phone = prev.phone_number;
-      }
-      
-      return next;
-    });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const data: Record<string, unknown> = {
-      customer_name: formData.customer_name,
-      phone_number: formData.phone_number || null,
-      email: formData.email || null,
-      address: formData.address || null,
-      notes: formData.notes || null,
-      assigned_to: formData.assigned_to || null,
-    };
-
-    if (!isEdit && formData.create_account) {
-      data.create_account = true;
-      data.account_phone = formatPhoneE164(formData.account_phone);
-      data.account_password = formData.account_password;
-    }
-
-    if (!isEdit && formData.initial_cost && formData.initial_cost_description) {
-      data.initial_cost = Number(formData.initial_cost);
-      data.initial_cost_description = formData.initial_cost_description;
-      data.initial_cost_type = formData.initial_cost_type;
-    }
-
-    onSave(data);
-  };
-
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
-      <div className="bg-card border rounded-lg shadow-lg w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-3 border-b">
-          <h2 className="text-[14px] font-semibold">
-            {isEdit ? 'Sửa khách hàng' : 'Thêm khách hàng mới'}
-          </h2>
-          <button onClick={onClose} className="p-1 hover:bg-accent rounded-md cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-5 space-y-5">
-          <div className="space-y-1.5">
-            <label className="text-[13px] font-medium">Tên khách hàng *</label>
-            <input
-              type="text"
-              value={formData.customer_name}
-              onChange={(e) => updateField('customer_name', e.target.value)}
-              required
-              className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium">Số điện thoại</label>
-              <input
-                type="text"
-                value={formData.phone_number}
-                onChange={(e) => updateField('phone_number', e.target.value)}
-                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium">Email</label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => updateField('email', e.target.value)}
-                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[13px] font-medium">Địa chỉ</label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={(e) => updateField('address', e.target.value)}
-              className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium">Người phụ trách</label>
-              <select
-                value={formData.assigned_to}
-                onChange={(e) => updateField('assigned_to', e.target.value)}
-                className="w-full h-8 px-3 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">-- Chọn người phụ trách --</option>
-                {(staffList ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.display_name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium">Ngày giờ thêm</label>
-              <input
-                type="text"
-                value={createdAtDisplay}
-                readOnly
-                className="w-full h-8 px-3 text-[13px] border rounded-md bg-slate-50 text-slate-500"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[13px] font-medium">Ghi chú</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => updateField('notes', e.target.value)}
-              rows={2}
-              className="w-full px-3 py-2 text-[13px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-            />
-          </div>
-
-          {/* Create Account Option (only for new customers) */}
-          {!isEdit && (
-            <div className="border rounded-md p-4 space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.create_account}
-                  onChange={(e) => updateField('create_account', e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-border"
-                />
-                <span className="text-[13px] font-medium">Tạo tài khoản đăng nhập</span>
-              </label>
-
-              {formData.create_account && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium text-muted-foreground">SĐT đăng nhập *</label>
-                      <input
-                        type="tel"
-                        value={formData.account_phone}
-                        onChange={(e) => updateField('account_phone', e.target.value)}
-                        required={formData.create_account}
-                        className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                    </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium text-muted-foreground">Mật khẩu *</label>
-                    <input
-                      type="password"
-                      value={formData.account_password}
-                      onChange={(e) => updateField('account_password', e.target.value)}
-                      required={formData.create_account}
-                      minLength={6}
-                      className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!isEdit && (
-            <div className="border rounded-md p-4 space-y-3">
-              <p className="text-[13px] font-medium flex items-center gap-1.5">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                Chi phí ban đầu (tùy chọn)
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-muted-foreground">Số tiền (đ)</label>
-                  <input
-                    type="number"
-                    value={formData.initial_cost}
-                    onChange={(e) => updateField('initial_cost', e.target.value)}
-                    min="0"
-                    placeholder="0"
-                    className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-muted-foreground">Loại chi phí</label>
-                  <select
-                    value={formData.initial_cost_type}
-                    onChange={(e) => updateField('initial_cost_type', e.target.value)}
-                    className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="advertising">Quảng cáo</option>
-                    <option value="consulting">Tư vấn</option>
-                    <option value="travel">Đi lại</option>
-                    <option value="gift">Quà tặng</option>
-                    <option value="commission">Hoa hồng</option>
-                    <option value="other">Khác</option>
-                  </select>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-muted-foreground">Mô tả chi phí</label>
-                <input
-                  type="text"
-                  value={formData.initial_cost_description}
-                  onChange={(e) => updateField('initial_cost_description', e.target.value)}
-                  placeholder="VD: Chi phí quảng cáo Facebook..."
-                  className="w-full h-7 px-2.5 text-[12px] border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-8 px-3 text-[12px] font-medium border rounded-md hover:bg-accent transition-colors cursor-pointer"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="h-8 px-3 text-[12px] font-medium text-primary-foreground bg-primary rounded-md hover:bg-primary/90 disabled:opacity-40 transition-colors cursor-pointer"
-            >
-              {isLoading ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Tạo mới'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>,
-    document.body
   );
 }
 

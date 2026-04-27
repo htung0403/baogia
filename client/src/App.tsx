@@ -24,6 +24,7 @@ import OrdersPage from '@/pages/admin/OrdersPage';
 import PaymentsPage from '@/pages/admin/PaymentsPage';
 import FinancialDashboardPage from '@/pages/admin/FinancialDashboardPage';
 import EmployeesPage from '@/pages/admin/EmployeesPage';
+import CustomerGroupsPage from '@/pages/admin/CustomerGroupsPage';
 
 // Portal pages
 import PortalDashboard from '@/pages/portal/PortalDashboard';
@@ -84,6 +85,7 @@ function AppRoutes() {
           <Route path="/admin/payments" element={<PaymentsPage />} />
           <Route path="/admin/financial" element={<FinancialDashboardPage />} />
           <Route path="/admin/employees" element={<EmployeesPage />} />
+          <Route path="/admin/customer-groups" element={<CustomerGroupsPage />} />
         </Route>
       </Route>
 

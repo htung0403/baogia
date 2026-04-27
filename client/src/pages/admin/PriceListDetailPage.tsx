@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '@/components/ui/toast';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { priceListApi, productApi, customerApi } from '@/api/client';
+import { priceListApi, productApi, customerApi, customerGroupApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import type { PriceListDetail, Product } from '@/types';
+import type { PriceListDetail, PriceListItem, PriceListVersion, Product } from '@/types';
 import {
   ArrowLeft,
   Plus,
@@ -17,17 +18,24 @@ import {
   Check,
   AlertTriangle,
   Download,
+  Pencil,
+  Trash2,
+  Eye,
 } from 'lucide-react';
 
 export default function PriceListDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [showAddProducts, setShowAddProducts] = useState(false);
   const [showAssignCustomers, setShowAssignCustomers] = useState(false);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [changelog, setChangelog] = useState('');
   const [isBuilding, setIsBuilding] = useState(false);
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
+  const [versionToDelete, setVersionToDelete] = useState<{ id: string; version_number: number } | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
 
   const { data: res, isLoading } = useQuery({
     queryKey: ['price-list', id],
@@ -38,11 +46,22 @@ export default function PriceListDetailPage() {
 
   const detail: PriceListDetail | null = res?.data?.data ?? null;
 
+  const activeVersionId: string | null = selectedVersionId ?? detail?.versions?.[0]?.id ?? null;
+
+  const { data: versionRes } = useQuery({
+    queryKey: ['price-list-version', id, activeVersionId],
+    queryFn: () => priceListApi.getVersion(id!, activeVersionId!),
+    enabled: !!id && !!activeVersionId,
+    staleTime: 60 * 1000,
+  });
+
+  const displayItems: PriceListItem[] = versionRes?.data?.data?.items ?? detail?.items ?? [];
+
   const handleExportExcel = () => {
-    if (!detail || detail.items.length === 0) return;
+    if (!detail || displayItems.length === 0) return;
 
     const headers = ['STT', 'Thiết bị', 'SKU', 'DVT', 'Giá đại lý', 'Giá bán lẻ thấp nhất', 'Giá niêm yết truyền thông, MXH', 'Ghi chú'];
-    const rows = detail.items.map((item, index) => [
+    const rows = displayItems.map((item, index) => [
       index + 1,
       item.product_name_snapshot,
       item.product_sku_snapshot,
@@ -93,7 +112,45 @@ export default function PriceListDetailPage() {
       setIsBuilding(false);
       setDraftItems([]);
       setChangelog('');
+      toast.success('Tạo phiên bản thành công');
     },
+    onError: (error: any) => toast.error('Lỗi tạo phiên bản', error?.response?.data?.message || 'Vui lòng thử lại'),
+  });
+
+  const updateVersionMutation = useMutation({
+    mutationFn: (data: { changelog?: string; items: DraftItem[] }) =>
+      priceListApi.updateVersion(id!, editingVersionId!, {
+        changelog: data.changelog || undefined,
+        items: data.items.map((item, index) => ({
+          product_id: item.product_id,
+          dealer_price: item.dealer_price || null,
+          retail_price: item.retail_price || null,
+          public_price: item.public_price || null,
+          note: item.note || undefined,
+          sort_order: index,
+        })),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-list', id] });
+      queryClient.invalidateQueries({ queryKey: ['price-list-version', id] });
+      setIsBuilding(false);
+      setDraftItems([]);
+      setChangelog('');
+      setEditingVersionId(null);
+      toast.success('Cập nhật phiên bản thành công');
+    },
+    onError: (error: any) => toast.error('Lỗi cập nhật phiên bản', error?.response?.data?.message || 'Vui lòng thử lại'),
+  });
+
+  const deleteVersionMutation = useMutation({
+    mutationFn: (versionId: string) => priceListApi.deleteVersion(id!, versionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-list', id] });
+      queryClient.invalidateQueries({ queryKey: ['price-list-version', id] });
+      setVersionToDelete(null);
+      toast.success('Đã xóa phiên bản');
+    },
+    onError: (error: any) => toast.error('Lỗi xóa phiên bản', error?.response?.data?.message || 'Vui lòng thử lại'),
   });
 
   const assignMutation = useMutation({
@@ -105,9 +162,10 @@ export default function PriceListDetailPage() {
   });
 
   const handleStartBuilding = () => {
-    if (detail?.items && detail.items.length > 0) {
+    setEditingVersionId(null);
+    if (displayItems.length > 0) {
       setDraftItems(
-        detail.items.map((item) => ({
+        displayItems.map((item) => ({
           product_id: item.product_id,
           product_name: item.product_name_snapshot,
           product_sku: item.product_sku_snapshot,
@@ -121,6 +179,31 @@ export default function PriceListDetailPage() {
       );
     }
     setIsBuilding(true);
+  };
+
+  const handleEditVersion = async (v: PriceListVersion) => {
+    try {
+      const res = await priceListApi.getVersion(id!, v.id);
+      const items: PriceListItem[] = res?.data?.data?.items ?? [];
+      setDraftItems(
+        items.map((item) => ({
+          product_id: item.product_id,
+          product_name: item.product_name_snapshot,
+          product_sku: item.product_sku_snapshot,
+          product_image: item.product_image_snapshot,
+          product_unit: item.product_unit_snapshot,
+          dealer_price: item.dealer_price ?? 0,
+          retail_price: item.retail_price ?? 0,
+          public_price: item.public_price ?? 0,
+          note: item.note ?? '',
+        }))
+      );
+      setChangelog(v.changelog ?? '');
+      setEditingVersionId(v.id);
+      setIsBuilding(true);
+    } catch (error: any) {
+      toast.error('Lỗi tải phiên bản', error?.response?.data?.message || 'Vui lòng thử lại');
+    }
   };
 
   const handleAddProducts = (products: Product[]) => {
@@ -156,7 +239,11 @@ export default function PriceListDetailPage() {
 
   const handleSaveVersion = () => {
     if (draftItems.length === 0) return;
-    createVersionMutation.mutate({ changelog, items: draftItems });
+    if (editingVersionId) {
+      updateVersionMutation.mutate({ changelog, items: draftItems });
+    } else {
+      createVersionMutation.mutate({ changelog, items: draftItems });
+    }
   };
 
   if (isLoading) {
@@ -241,7 +328,9 @@ export default function PriceListDetailPage() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
               <span className="text-[13px] font-medium text-amber-800">
-                Đang thiết lập phiên bản mới ({draftItems.length} thiết bị)
+                {editingVersionId
+                  ? `Đang chỉnh sửa phiên bản v${detail.versions.find((v: PriceListVersion) => v.id === editingVersionId)?.version_number} (${draftItems.length} thiết bị)`
+                  : `Đang thiết lập phiên bản mới (${draftItems.length} thiết bị)`}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -253,7 +342,7 @@ export default function PriceListDetailPage() {
                 Thêm TB
               </button>
               <button
-                onClick={() => { setIsBuilding(false); setDraftItems([]); }}
+                onClick={() => { setIsBuilding(false); setDraftItems([]); setChangelog(''); setEditingVersionId(null); }}
                 className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] border rounded-md hover:bg-accent cursor-pointer"
               >
                 <X className="w-3 h-3" />
@@ -261,11 +350,11 @@ export default function PriceListDetailPage() {
               </button>
               <button
                 onClick={handleSaveVersion}
-                disabled={draftItems.length === 0 || createVersionMutation.isPending}
+                disabled={draftItems.length === 0 || createVersionMutation.isPending || updateVersionMutation.isPending}
                 className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-primary-foreground bg-primary rounded-md hover:bg-primary/90 disabled:opacity-40 cursor-pointer"
               >
                 <Save className="w-3 h-3" />
-                Lưu phiên bản
+                {editingVersionId ? 'Lưu cập nhật' : 'Lưu phiên bản'}
               </button>
             </div>
           </div>
@@ -397,7 +486,7 @@ export default function PriceListDetailPage() {
                   </tr>
                 ))
               ) : (
-                detail.items.map((item, index) => (
+                displayItems.map((item, index) => (
                   <tr key={item.id} className="border-b border-black hover:bg-gray-50 transition-colors">
                     <td className="border-r border-black py-6 px-1 text-center font-semibold align-middle">{index + 1}</td>
                     <td className="border-r border-black py-6 px-4 align-top max-w-[240px]">
@@ -430,7 +519,7 @@ export default function PriceListDetailPage() {
                 ))
               )}
 
-              {detail.items.length === 0 && !isBuilding && (
+              {displayItems.length === 0 && !isBuilding && (
                 <tr>
                   <td colSpan={7} className="text-center py-20 text-gray-400 italic">Chưa có dữ liệu sản phẩm trong bảng giá này</td>
                 </tr>
@@ -448,8 +537,10 @@ export default function PriceListDetailPage() {
             <h2 className="text-[13px] font-medium">Lịch sử các phiên bản</h2>
           </div>
           <div className="divide-y">
-            {detail.versions.map((v) => (
-              <div key={v.id} className="flex items-center justify-between py-2.5 px-4 hover:bg-muted/20 transition-colors">
+            {detail.versions.map((v: PriceListVersion) => {
+              const isSelected = v.id === activeVersionId;
+              return (
+              <div key={v.id} className={`flex items-center justify-between py-2.5 px-4 transition-colors ${isSelected ? 'bg-primary/5 border-l-2 border-primary' : 'hover:bg-muted/20'}`}>
                 <div className="flex items-center gap-3">
                   <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-bold ${
                     v.status === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -457,18 +548,48 @@ export default function PriceListDetailPage() {
                   <span className="text-[13px]">{v.changelog || 'Không có ghi chú thay đổi'}</span>
                   <span className="text-[11px] text-muted-foreground">{formatDate(v.created_at)}</span>
                 </div>
-                {v.status === 'draft' && (
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => publishMutation.mutate({ priceListId: id!, versionId: v.id })}
-                    disabled={publishMutation.isPending}
-                    className="inline-flex items-center gap-1.5 h-7 px-3 text-[11px] font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-40 cursor-pointer"
+                    onClick={() => setSelectedVersionId(isSelected ? null : v.id)}
+                    className={`inline-flex items-center gap-1.5 h-7 px-3 text-[11px] font-medium rounded cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        : 'border hover:bg-accent'
+                    }`}
                   >
-                    <Send className="w-3 h-3" />
-                    Công bố
+                    <Eye className="w-3 h-3" />
+                    {isSelected ? 'Đang xem' : 'Xem'}
                   </button>
-                )}
+                  {v.status === 'draft' && (
+                    <>
+                      <button
+                        onClick={() => handleEditVersion(v)}
+                        disabled={updateVersionMutation.isPending || createVersionMutation.isPending}
+                        className="inline-flex items-center gap-1.5 h-7 px-3 text-[11px] font-medium border rounded hover:bg-accent disabled:opacity-40 cursor-pointer"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        Chỉnh sửa
+                      </button>
+                      <button
+                        onClick={() => setVersionToDelete({ id: v.id, version_number: v.version_number })}
+                        className="inline-flex items-center gap-1.5 h-7 px-3 text-[11px] font-medium border border-red-200 text-red-600 rounded hover:bg-red-50 disabled:opacity-40 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Xóa
+                      </button>
+                      <button
+                        onClick={() => publishMutation.mutate({ priceListId: id!, versionId: v.id })}
+                        disabled={publishMutation.isPending}
+                        className="inline-flex items-center gap-1.5 h-7 px-3 text-[11px] font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-40 cursor-pointer"
+                      >
+                        <Send className="w-3 h-3" />
+                        Công bố
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
       )}
@@ -489,6 +610,43 @@ export default function PriceListDetailPage() {
           onClose={() => setShowAssignCustomers(false)}
           isLoading={assignMutation.isPending}
         />
+      )}
+
+      {versionToDelete && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="flex flex-col items-center px-6 pt-7 pb-5 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className="text-[16px] font-bold text-slate-900 mb-2">Xác nhận xóa</h3>
+              <p className="text-[13px] text-slate-500 leading-relaxed">
+                Bạn có chắc chắn muốn xóa phiên bản <span className="font-bold text-slate-800">v{versionToDelete.version_number}</span> không?
+                <br />
+                Hành động này không thể hoàn tác.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-6 pb-6">
+              <button
+                type="button"
+                onClick={() => setVersionToDelete(null)}
+                disabled={deleteVersionMutation.isPending}
+                className="flex-1 h-10 text-[13px] font-medium border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteVersionMutation.mutate(versionToDelete.id)}
+                disabled={deleteVersionMutation.isPending}
+                className="flex-1 h-10 text-[13px] font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 shadow-sm shadow-red-200"
+              >
+                {deleteVersionMutation.isPending ? 'Đang xóa...' : 'Xóa phiên bản'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -591,30 +749,188 @@ function ProductPickerModal({ onAdd, onClose, excludeIds }: { onAdd: (products: 
 
 function CustomerAssignModal({ currentCustomerIds, onAssign, onClose, isLoading }: { currentCustomerIds: string[]; onAssign: (ids: string[]) => void; onClose: () => void; isLoading: boolean; }) {
   const [selected, setSelected] = useState<string[]>([]);
-  const { data: res } = useQuery({ queryKey: ['customers-assign'], queryFn: () => customerApi.list({ limit: 200 }), staleTime: 5 * 60 * 1000 });
-  const customers = ((res?.data?.data ?? []) as any[]).filter(c => !currentCustomerIds.includes(c.id));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const { data: groupsRes } = useQuery({ queryKey: ['customer-groups-assign'], queryFn: () => customerGroupApi.list(), staleTime: 5 * 60 * 1000 });
+  const { data: customersRes } = useQuery({ queryKey: ['customers-assign'], queryFn: () => customerApi.list({ limit: 500 }), staleTime: 5 * 60 * 1000 });
+
+  const allGroups: any[] = groupsRes?.data?.data ?? [];
+  const allCustomers: any[] = customersRes?.data?.data ?? [];
+
+  const groupedCustomers = React.useMemo(() => {
+    const map = new Map<string | null, any[]>();
+    for (const c of allCustomers) {
+      const key = c.customer_group_id ?? null;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    }
+    return map;
+  }, [allCustomers]);
+
+  const sections = React.useMemo(() => {
+    const result: { id: string | null; name: string; customers: any[] }[] = [];
+    const sortedGroups = [...allGroups].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    for (const g of sortedGroups) {
+      const customers = groupedCustomers.get(g.id) ?? [];
+      if (customers.length > 0) result.push({ id: g.id, name: g.name, customers });
+    }
+    const uncategorized = groupedCustomers.get(null) ?? [];
+    if (uncategorized.length > 0) result.push({ id: null, name: 'Chưa phân nhóm', customers: uncategorized });
+    return result;
+  }, [allGroups, groupedCustomers]);
+
+  useEffect(() => {
+    if (sections.length > 0 && expandedGroups.size === 0) {
+      setExpandedGroups(new Set(sections.map(s => String(s.id))));
+    }
+  }, [sections]);
+
+  const toggleCustomer = (id: string) =>
+    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const toggleGroup = (section: { id: string | null; customers: any[] }) => {
+    const assignable = section.customers.filter(c => !currentCustomerIds.includes(c.id));
+    const assignableIds = assignable.map(c => c.id);
+    const allSelected = assignableIds.every(id => selected.includes(id));
+    if (allSelected) {
+      setSelected(prev => prev.filter(id => !assignableIds.includes(id)));
+    } else {
+      setSelected(prev => [...new Set([...prev, ...assignableIds])]);
+    }
+  };
+
+  const toggleExpanded = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const totalAssignable = allCustomers.filter(c => !currentCustomerIds.includes(c.id)).length;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-card border rounded-lg shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 border-b">
-          <h2 className="text-[14px] font-bold uppercase">Gán bảng giá cho khách hàng</h2>
-          <button onClick={onClose} className="p-1 hover:bg-accent rounded-md cursor-pointer"><X className="w-4 h-4" /></button>
+      <div className="bg-card border rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b">
+          <div>
+            <h2 className="text-[14px] font-bold uppercase tracking-wide">Gán bảng giá cho khách hàng</h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {selected.length > 0 ? `Đã chọn ${selected.length} khách hàng` : `${totalAssignable} khách hàng chưa được gán`}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-accent rounded-md cursor-pointer"><X className="w-4 h-4" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {customers.length === 0 ? <p className="text-center py-10 text-gray-500">Tất cả khách hàng đã được gán</p> : customers.map(c => {
-            const isSel = selected.includes(c.id);
-            return (
-              <button key={c.id} onClick={() => setSelected(prev => isSel ? prev.filter(id => id !== c.id) : [...prev, c.id])} className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-md text-left transition-colors border ${isSel ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted border-transparent'}`}>
-                <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSel ? 'bg-primary border-primary' : 'bg-white border-gray-300'}`}>{isSel && <Check className="w-3 h-3 text-white" />}</div>
-                <div><p className="text-[13px] font-bold leading-tight">{c.customer_name}</p><p className="text-[11px] text-muted-foreground">{c.phone_number || '-'}</p></div>
-              </button>
-            );
-          })}
+
+        <div className="flex-1 overflow-y-auto">
+          {sections.length === 0 ? (
+            <p className="text-center py-14 text-[13px] text-muted-foreground">Tất cả khách hàng đã được gán</p>
+          ) : (
+            <div className="divide-y">
+              {sections.map(section => {
+                const groupKey = String(section.id);
+                const isExpanded = expandedGroups.has(groupKey);
+                const assignable = section.customers.filter(c => !currentCustomerIds.includes(c.id));
+                const assignableIds = assignable.map(c => c.id);
+                const allGroupSelected = assignableIds.length > 0 && assignableIds.every(id => selected.includes(id));
+                const someGroupSelected = assignableIds.some(id => selected.includes(id));
+
+                return (
+                  <div key={groupKey}>
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-muted/40 sticky top-0 z-10">
+                      <button
+                        onClick={() => toggleGroup(section)}
+                        disabled={assignable.length === 0}
+                        className="shrink-0 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        title={assignable.length === 0 ? 'Tất cả đã được gán' : allGroupSelected ? 'Bỏ chọn nhóm' : 'Chọn cả nhóm'}
+                      >
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                          allGroupSelected
+                            ? 'bg-primary border-primary'
+                            : someGroupSelected
+                            ? 'bg-primary/30 border-primary/60'
+                            : 'bg-white border-gray-300'
+                        }`}>
+                          {allGroupSelected && <Check className="w-3 h-3 text-white" />}
+                          {!allGroupSelected && someGroupSelected && <div className="w-2 h-0.5 bg-primary rounded" />}
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => toggleExpanded(groupKey)}
+                        className="flex-1 flex items-center gap-2 text-left cursor-pointer min-w-0"
+                      >
+                        <span className="text-[12px] font-semibold text-foreground truncate">{section.name}</span>
+                        <span className="text-[11px] text-muted-foreground shrink-0">
+                          ({assignable.length}/{section.customers.length})
+                        </span>
+                        <svg
+                          className={`w-3.5 h-3.5 text-muted-foreground shrink-0 ml-auto transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="divide-y divide-border/50">
+                        {section.customers.map(c => {
+                          const isAssigned = currentCustomerIds.includes(c.id);
+                          const isSel = selected.includes(c.id);
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => !isAssigned && toggleCustomer(c.id)}
+                              disabled={isAssigned}
+                              className={`w-full flex items-center gap-3 py-2.5 px-5 text-left transition-colors ${
+                                isAssigned
+                                  ? 'opacity-50 cursor-not-allowed bg-muted/20'
+                                  : isSel
+                                  ? 'bg-primary/5 cursor-pointer'
+                                  : 'hover:bg-muted/30 cursor-pointer'
+                              }`}
+                            >
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                isAssigned
+                                  ? 'bg-emerald-100 border-emerald-300'
+                                  : isSel
+                                  ? 'bg-primary border-primary'
+                                  : 'bg-white border-gray-300'
+                              }`}>
+                                {isAssigned && <Check className="w-3 h-3 text-emerald-600" />}
+                                {!isAssigned && isSel && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[13px] font-medium leading-tight truncate">{c.customer_name}</p>
+                                <p className="text-[11px] text-muted-foreground">{c.phone_number || '-'}</p>
+                              </div>
+                              {isAssigned && (
+                                <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
+                                  Đã gán
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+
         <div className="flex justify-end gap-2 px-5 py-3 border-t bg-muted/10">
           <button onClick={onClose} className="h-8 px-4 text-[12px] font-bold border rounded hover:bg-accent cursor-pointer">HUỶ</button>
-          <button onClick={() => onAssign(selected)} disabled={selected.length === 0 || isLoading} className="h-8 px-4 text-[12px] font-bold text-white bg-primary rounded hover:bg-primary/90 disabled:opacity-40 cursor-pointer">{isLoading ? 'ĐANG GÁN...' : `GÁN CHO ${selected.length} KHÁCH`}</button>
+          <button
+            onClick={() => onAssign(selected)}
+            disabled={selected.length === 0 || isLoading}
+            className="h-8 px-4 text-[12px] font-bold text-white bg-primary rounded hover:bg-primary/90 disabled:opacity-40 cursor-pointer"
+          >
+            {isLoading ? 'ĐANG GÁN...' : `GÁN CHO ${selected.length} KHÁCH`}
+          </button>
         </div>
       </div>
     </div>,

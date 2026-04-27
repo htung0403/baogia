@@ -18,7 +18,7 @@ export async function listCustomers(req: Request, res: Response, next: NextFunct
 
     let query = supabaseAdmin
       .from('customers')
-      .select('*, profiles:profile_id(display_name, role, is_active), assigned_profile:assigned_to(display_name)', { count: 'exact' });
+      .select('*, profiles:profile_id(display_name, role, is_active), assigned_profile:assigned_to(display_name), customer_groups(id, name, code)', { count: 'exact' });
 
     if (!include_deleted) {
       query = query.is('deleted_at', null);
@@ -94,7 +94,7 @@ export async function getCustomer(req: Request, res: Response, next: NextFunctio
 
     const { data: customer, error } = await supabaseAdmin
       .from('customers')
-      .select('*, profiles:profile_id(display_name, role, is_active)')
+      .select('*, profiles:profile_id(display_name, role, is_active), customer_groups(id, name, code)')
       .eq('id', id)
       .is('deleted_at', null)
       .single();
@@ -164,10 +164,13 @@ export async function createCustomer(req: Request, res: Response, next: NextFunc
         tax_code: input.tax_code ?? null,
         industry: input.industry ?? null,
         customer_group: input.customer_group ?? null,
+        customer_group_id: input.customer_group_id ?? null,
         website: input.website ?? null,
         fax: input.fax ?? null,
         skype: input.skype ?? null,
         facebook: input.facebook ?? null,
+        tiktok_url: input.tiktok_url ?? null,
+        characteristics: input.characteristics ?? null,
         assigned_to: input.assigned_to ?? user.id,
         created_by: user.id,
       })

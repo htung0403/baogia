@@ -52,11 +52,13 @@ export const createCustomerSchema = z.object({
   tax_code: z.string().nullable().optional(),
   industry: z.string().nullable().optional(),
   customer_group: z.string().nullable().optional(),
+  customer_group_id: z.string().uuid().nullable().optional(),
   website: z.string().nullable().optional(),
   fax: z.string().nullable().optional(),
   skype: z.string().nullable().optional(),
   facebook: z.string().nullable().optional(),
-  // Optional: create a user account for this customer
+  tiktok_url: z.string().nullable().optional(),
+  characteristics: z.string().nullable().optional(),
   create_account: z.boolean().default(false),
   account_phone: z.string().min(10).optional(),
   account_password: z.string().min(6).optional(),
@@ -73,11 +75,26 @@ export const updateCustomerSchema = z.object({
   tax_code: z.string().nullable().optional(),
   industry: z.string().nullable().optional(),
   customer_group: z.string().nullable().optional(),
+  customer_group_id: z.string().uuid().nullable().optional(),
   website: z.string().nullable().optional(),
   fax: z.string().nullable().optional(),
   skype: z.string().nullable().optional(),
   facebook: z.string().nullable().optional(),
+  tiktok_url: z.string().nullable().optional(),
+  characteristics: z.string().nullable().optional(),
 });
+
+// ============================================================
+// CUSTOMER GROUPS
+// ============================================================
+export const createCustomerGroupSchema = z.object({
+  name: z.string().min(1, 'Tên nhóm không được trống'),
+  code: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  sort_order: z.number().int().default(0),
+});
+
+export const updateCustomerGroupSchema = createCustomerGroupSchema.partial();
 
 // ============================================================
 // PRICE LISTS
@@ -304,3 +321,5 @@ export type CreateStageInput = z.infer<typeof createStageSchema>;
 export type UpdateStageInput = z.infer<typeof updateStageSchema>;
 export type CreateCustomerCostInput = z.infer<typeof createCustomerCostSchema>;
 export type UpdateCustomerCostInput = z.infer<typeof updateCustomerCostSchema>;
+export type CreateCustomerGroupInput = z.infer<typeof createCustomerGroupSchema>;
+export type UpdateCustomerGroupInput = z.infer<typeof updateCustomerGroupSchema>;

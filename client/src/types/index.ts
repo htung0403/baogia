@@ -34,13 +34,27 @@ export interface Customer {
   tax_code: string | null;
   industry: string | null;
   customer_group: string | null;
+  customer_group_id: string | null;
   website: string | null;
   fax: string | null;
   skype: string | null;
   facebook: string | null;
+  tiktok_url: string | null;
+  characteristics: string | null;
   assigned_profile?: { display_name: string } | null;
+  customer_groups?: { id: string; name: string; code: string | null } | null;
   last_activity_at?: string | null;
   latest_trao_doi?: string | null;
+}
+
+export interface CustomerGroup {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ProductCategory {

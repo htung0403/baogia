@@ -12,6 +12,7 @@ import {
   ShoppingCart,
   CreditCard,
   TrendingUp,
+  UsersRound,
 } from 'lucide-react';
 import { useState } from 'react';
 import { displayEmailOrPhone } from '@/lib/utils';
@@ -22,6 +23,7 @@ const adminNavItems = [
   { to: '/admin/products', icon: Package, label: 'Sản phẩm', end: false },
   { to: '/admin/price-lists', icon: FileSpreadsheet, label: 'Bảng giá', end: false },
   { to: '/admin/customers', icon: Users, label: 'Khách hàng', end: false },
+  { to: '/admin/customer-groups', icon: UsersRound, label: 'Nhóm khách', end: false },
   { to: '/admin/employees', icon: Users, label: 'Nhân viên', end: false },
   { to: '/admin/orders', icon: ShoppingCart, label: 'Đơn hàng', end: false },
   { to: '/admin/payments', icon: CreditCard, label: 'Thanh toán', end: false },
@@ -126,7 +128,7 @@ export default function AdminLayout() {
       {/* Main Content */}
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         {/* Top bar */}
-        <header className="h-14 border-b flex items-center px-4 lg:px-6 bg-card">
+        <header className="h-14 border-b flex items-center px-4 lg:px-6 bg-card sticky top-0 z-40">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden p-1.5 hover:bg-accent rounded-md mr-3 cursor-pointer"
@@ -142,7 +144,7 @@ export default function AdminLayout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-auto relative z-0">
+        <main className="flex-1 p-4 lg:p-6 relative z-0">
           <Outlet />
         </main>
       </div>

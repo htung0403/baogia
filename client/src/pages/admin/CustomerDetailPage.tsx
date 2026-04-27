@@ -18,8 +18,6 @@ import {
   MessageSquare,
   MessageCircle,
   ShoppingCart,
-  Target,
-  Share2,
   AlertCircle,
   Edit,
   Trash2,
@@ -30,12 +28,14 @@ import {
   StickyNote,
   User,
   Facebook,
+  Music2,
   Eye,
   CreditCard,
   Search,
   Plus,
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
+import { DateTimePicker24h } from '@/components/ui/DateTimePicker';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CustomerCost } from '@/types';
 
@@ -48,7 +48,7 @@ const COST_TYPE_LABELS: Record<string, string> = {
   other: 'Khác',
 };
 
-type Tab = 'trao-doi' | 'kh-phan-hoi' | 'giao-dich' | 'lich-hen' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'chi-phi' | 'lich-su-trang-thai';
+type Tab = 'trao-doi' | 'giao-dich' | 'lich-hen' | 'co-hoi' | 'lich-di-tuyen' | 'automation' | 'gioi-thieu' | 'chi-phi' | 'lich-su-trang-thai';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -74,12 +74,14 @@ export function StatCard({
   icon: Icon,
   color,
   sub,
+  variant = 'default',
 }: {
   label: string;
   value: string;
   icon: React.ElementType;
   color: 'indigo' | 'emerald' | 'amber' | 'rose';
   sub?: string;
+  variant?: 'default' | 'compact';
 }) {
   const colorMap = {
     indigo: { bg: 'bg-indigo-50', border: 'border-indigo-100', icon: 'text-indigo-600', value: 'text-indigo-700' },
@@ -88,6 +90,19 @@ export function StatCard({
     rose: { bg: 'bg-rose-50', border: 'border-rose-100', icon: 'text-rose-600', value: 'text-rose-700' },
   };
   const c = colorMap[color];
+
+  if (variant === 'compact') {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-2 shadow-sm flex flex-col items-center justify-center gap-1 min-w-0 text-center">
+        <div className={`w-7 h-7 rounded-lg ${c.bg} ${c.border} border flex items-center justify-center shrink-0`}>
+          <Icon className={`w-3.5 h-3.5 ${c.icon}`} />
+        </div>
+        <p className={`text-base font-bold tabular-nums ${c.value} leading-none`}>{value}</p>
+        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide leading-tight truncate w-full">{label}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
       <div className="flex items-start justify-between mb-3">
@@ -118,13 +133,10 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 
 const TAB_LIST: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'trao-doi', label: 'Trao đổi', icon: MessageSquare },
-  { id: 'kh-phan-hoi', label: 'KH phản hồi', icon: MessageCircle },
   { id: 'giao-dich', label: 'Giao dịch', icon: ShoppingCart },
   { id: 'lich-su-trang-thai', label: 'Lịch sử chuyển trạng thái', icon: Clock },
   { id: 'lich-hen', label: 'Lịch hẹn', icon: Calendar },
-  { id: 'co-hoi', label: 'Cơ hội', icon: Target },
-  { id: 'gioi-thieu', label: 'Giới thiệu', icon: Share2 },
-  { id: 'chi-phi', label: 'Chi phí', icon: CreditCard },
+  // { id: 'chi-phi', label: 'Chi phí', icon: CreditCard },
 ];
 
 // ──────────────────────────────────────────────
@@ -134,7 +146,30 @@ export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('trao-doi');
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    phone_number: '',
+    email: '',
+    fax: '',
+    skype: '',
+    facebook: '',
+    tiktok_url: '',
+  });
   const toast = useToast();
+
+  const queryClient = useQueryClient();
+
+  const updateCustomerMutation = useMutation({
+    mutationFn: (data: Record<string, any>) => customerApi.update(id!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer', id] });
+      toast.success('Cập nhật thông tin thành công');
+      setIsEditingContact(false);
+    },
+    onError: (error: any) => {
+      toast.error('Không thể cập nhật thông tin', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
 
   const { data: customerRes, isLoading: customerLoading } = useQuery({
     queryKey: ['customer', id],
@@ -163,7 +198,6 @@ export default function CustomerDetailPage() {
   const allStages = pipelineColumns.flatMap((c: any) => c.stages || []);
 
   const customer: Customer | undefined = customerRes?.data?.data;
-  const queryClient = useQueryClient();
 
   const currentStageId = customer
     ? (allStages.find((s: any) => (s.customers || []).some((c: any) => c.id === customer.id))?.id ?? '')
@@ -253,9 +287,9 @@ export default function CustomerDetailPage() {
   }
 
   return (
-    <div className="flex items-start gap-6 w-full">
-      {/* Left Sidebar */}
-      <div className="w-[350px] shrink-0 space-y-4 sticky top-6">
+    <div className="flex flex-col lg:flex-row items-start gap-6 w-full h-[calc(100vh-88px)] lg:h-[calc(100vh-104px)]">
+      {/* Left Sidebar - Scrolls internally */}
+      <div className="w-full lg:w-[350px] shrink-0 space-y-4 h-full overflow-y-auto custom-scrollbar pr-2 pb-4">
         {/* Header */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm relative">
           <div className="absolute top-4 right-4 flex items-center gap-2">
@@ -284,27 +318,134 @@ export default function CustomerDetailPage() {
         </div>
 
         {/* Contact Info */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
-          <div className="flex items-center gap-3 text-[13px]">
-            <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="text-slate-700 truncate">{customer.phone_number || '—'}</span>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3 relative group">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Thông tin liên hệ</h3>
+            {!isEditingContact && (
+              <button
+                onClick={() => {
+                  setContactForm({
+                    phone_number: customer.phone_number || '',
+                    email: customer.email || '',
+                    fax: customer.fax || '',
+                    skype: customer.skype || '',
+                    facebook: customer.facebook || '',
+                    tiktok_url: customer.tiktok_url || '',
+                  });
+                  setIsEditingContact(true);
+                }}
+                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                title="Chỉnh sửa liên hệ"
+              >
+                <Edit className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-3 text-[13px]">
-            <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="text-slate-700 truncate">{customer.email || '—'}</span>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 text-[13px]">
+              <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+              {isEditingContact ? (
+                <input
+                  type="text"
+                  value={contactForm.phone_number}
+                  onChange={(e) => setContactForm({ ...contactForm, phone_number: e.target.value })}
+                  placeholder="Số điện thoại"
+                  className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded text-[13px] outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-slate-700 truncate">{customer.phone_number || '—'}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-[13px]">
+              <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+              {isEditingContact ? (
+                <input
+                  type="email"
+                  value={contactForm.email}
+                  onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                  placeholder="Email"
+                  className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded text-[13px] outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-slate-700 truncate">{customer.email || '—'}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-[13px]">
+              <StickyNote className="w-4 h-4 text-slate-400 shrink-0" />
+              {isEditingContact ? (
+                <input
+                  type="text"
+                  value={contactForm.fax}
+                  onChange={(e) => setContactForm({ ...contactForm, fax: e.target.value })}
+                  placeholder="Fax"
+                  className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded text-[13px] outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-slate-700 truncate">{customer.fax || '—'} (Fax)</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-[13px]">
+              <MessageCircle className="w-4 h-4 text-slate-400 shrink-0" />
+              {isEditingContact ? (
+                <input
+                  type="text"
+                  value={contactForm.skype}
+                  onChange={(e) => setContactForm({ ...contactForm, skype: e.target.value })}
+                  placeholder="Skype"
+                  className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded text-[13px] outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-slate-700 truncate">{customer.skype || '—'}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-[13px]">
+              <Facebook className="w-4 h-4 text-slate-400 shrink-0" />
+              {isEditingContact ? (
+                <input
+                  type="text"
+                  value={contactForm.facebook}
+                  onChange={(e) => setContactForm({ ...contactForm, facebook: e.target.value })}
+                  placeholder="Facebook URL"
+                  className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded text-[13px] outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-slate-700 truncate">{customer.facebook || '—'}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-[13px]">
+              <Music2 className="w-4 h-4 text-slate-400 shrink-0" />
+              {isEditingContact ? (
+                <input
+                  type="text"
+                  value={contactForm.tiktok_url}
+                  onChange={(e) => setContactForm({ ...contactForm, tiktok_url: e.target.value })}
+                  placeholder="TikTok URL"
+                  className="flex-1 h-8 px-2 bg-slate-50 border border-slate-200 rounded text-[13px] outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <span className="text-slate-700 truncate">{customer.tiktok_url || '—'} (TikTok)</span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-[13px]">
-            <StickyNote className="w-4 h-4 text-slate-400 shrink-0" /> {/* Fax */}
-            <span className="text-slate-700 truncate">{customer.fax || '—'} (Fax)</span>
-          </div>
-          <div className="flex items-center gap-3 text-[13px]">
-            <MessageCircle className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="text-slate-700 truncate">{customer.skype || '—'}</span>
-          </div>
-          <div className="flex items-center gap-3 text-[13px]">
-            <Facebook className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="text-slate-700 truncate">{customer.facebook || '—'}</span>
-          </div>
+
+          {isEditingContact && (
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setIsEditingContact(false)}
+                className="flex-1 h-8 text-[12px] font-bold text-slate-500 bg-slate-50 rounded-lg hover:bg-slate-100 transition-all"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => updateCustomerMutation.mutate(contactForm)}
+                disabled={updateCustomerMutation.isPending}
+                className="flex-1 h-8 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50"
+              >
+                {updateCustomerMutation.isPending ? 'Đang lưu...' : 'Lưu lại'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Management */}
@@ -374,41 +515,9 @@ export default function CustomerDetailPage() {
 
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-2">
-          <CrmStatCard label="Tương tác" value="12" icon={TrendingUp} color="blue" />
-          <CrmStatCard label="Đơn hàng" value={orders.length.toString()} icon={ShoppingCart} color="green" />
-          <CrmStatCard label="Công nợ" value="0" icon={TrendingDown} color="orange" />
-        </div>
-
-        {/* Main Info */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-0 divide-y divide-slate-100">
-          <div className="flex items-center justify-between py-2.5">
-            <span className="text-[12px] text-slate-500">Mã số thuế</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-medium text-slate-900">{customer.tax_code || '—'}</span>
-              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-2.5">
-            <span className="text-[12px] text-slate-500">Lĩnh vực</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-medium text-slate-900">{customer.industry || '—'}</span>
-              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-2.5">
-            <span className="text-[12px] text-slate-500">Nhóm KH</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-medium text-slate-900">{customer.customer_group || '—'}</span>
-              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-2.5">
-            <span className="text-[12px] text-slate-500">Website</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-medium text-slate-900">{customer.website || '—'}</span>
-              <button className="text-slate-400 hover:text-indigo-600"><Edit className="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
+          <StatCard variant="compact" label="Tương tác" value="12" icon={TrendingUp} color="indigo" />
+          <StatCard variant="compact" label="Đơn hàng" value={orders.length.toString()} icon={ShoppingCart} color="emerald" />
+          <StatCard variant="compact" label="Công nợ" value="0" icon={TrendingDown} color="rose" />
         </div>
 
         {/* Metadata */}
@@ -437,62 +546,33 @@ export default function CustomerDetailPage() {
           </div>
         </div>
 
-        {/* Stage Transition History */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider">Lịch sử chuyển trạng thái</h3>
-            <span className="text-[11px] font-medium text-slate-400">{stageHistory.length} lần</span>
-          </div>
-
-          {stageHistory.length === 0 ? (
-            <p className="text-[12px] text-slate-400">Chưa có lịch sử chuyển trạng thái</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {stageHistory.map((item) => (
-                <div key={item.id} className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/70">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[12px] font-semibold text-slate-700">{item.from_stage?.name || 'Khởi tạo'}</span>
-                    <span className="text-[11px] text-slate-400">→</span>
-                    <span className="text-[12px] font-bold text-indigo-700">{item.to_stage?.name || '—'}</span>
-                  </div>
-                  {item.note && (
-                    <p className="mt-1.5 text-[12px] text-slate-600 whitespace-pre-wrap">{item.note}</p>
-                  )}
-                  <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                    <span>{item.moved_by_profile?.display_name || 'Hệ thống'}</span>
-                    <span className="tabular-nums">{formatDate(item.moved_at)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Right Content */}
-      <div className="flex-1 min-w-0 flex flex-col min-h-screen">
+      {/* Right Content - Independent Scroll */}
+      <div className="flex-1 min-w-0 h-full overflow-y-auto custom-scrollbar pr-1 relative pb-4">
         {/* Tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 overflow-x-auto mb-5 shrink-0">
-          {TAB_LIST.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'bg-white shadow-sm text-indigo-600'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <tab.icon className="w-3.5 h-3.5" />
-              {tab.label}
-            </button>
-          ))}
+        <div className="sticky top-0 z-30 bg-background pt-1 pb-3 border-b border-slate-200 mb-4">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 overflow-x-auto">
+            {TAB_LIST.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'bg-white shadow-sm text-indigo-600'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab Content */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {activeTab === 'trao-doi' && <TabTraoDoi customerId={customer.id} />}
-          {activeTab === 'kh-phan-hoi' && <TabKhachHangPhanHoi customerId={customer.id} />}
+          {activeTab === 'trao-doi' && <TabTraoDoi customer={customer} />}
           {activeTab === 'giao-dich' && (
             <div className="space-y-4">
               <TabOrders orders={orders} />
@@ -1271,30 +1351,61 @@ function TabStageHistory({ history }: { history: StageHistoryItem[] }) {
 // ──────────────────────────────────────────────
 // Tab: Trao đổi
 // ──────────────────────────────────────────────
-function TabTraoDoi({ customerId }: { customerId: string }) {
+function TabTraoDoi({ customer }: { customer: Customer }) {
   const [content, setContent] = useState('');
+  const [localCharacteristics, setLocalCharacteristics] = useState(customer.characteristics || '');
+  const [isAutoBullet, setIsAutoBullet] = useState(false);
   const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
   const toast = useToast();
 
+  const handleCharacteristicsKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && isAutoBullet) {
+      e.preventDefault();
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const value = target.value;
+
+      const newValue = value.substring(0, start) + '\n• ' + value.substring(end);
+      setLocalCharacteristics(newValue);
+
+      // Need to set selection after state update
+      setTimeout(() => {
+        target.selectionStart = target.selectionEnd = start + 3;
+      }, 0);
+    }
+  };
+
+  const updateCharacteristicsMutation = useMutation({
+    mutationFn: (characteristics: string) => customerApi.update(customer.id, { characteristics }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer', customer.id] });
+      toast.success('Đã lưu đặc điểm khách hàng');
+    },
+    onError: (error: any) => {
+      toast.error('Không thể lưu đặc điểm', error?.response?.data?.message || 'Vui lòng thử lại');
+    },
+  });
+
   const { data: activitiesRes, isLoading } = useQuery({
-    queryKey: ['activities', customerId],
-    queryFn: () => pipelineApi.listActivities(customerId),
-    enabled: !!customerId,
+    queryKey: ['activities', customer.id],
+    queryFn: () => pipelineApi.listActivities(customer.id),
+    enabled: !!customer.id,
     retry: false,
   });
 
   const createActivity = useMutation({
     mutationFn: (htmlContent: string) =>
       pipelineApi.createActivity({
-        customer_id: customerId,
+        customer_id: customer.id,
         activity_type: 'trao_doi',
         title: 'Trao đổi',
         description: htmlContent,
       }),
     onSuccess: () => {
       setContent('');
-      queryClient.invalidateQueries({ queryKey: ['activities', customerId] });
+      queryClient.invalidateQueries({ queryKey: ['activities', customer.id] });
       toast.success('Đã gửi trao đổi');
     },
     onError: (error: any) => {
@@ -1318,72 +1429,116 @@ function TabTraoDoi({ customerId }: { customerId: string }) {
   });
 
   return (
-    <div className="flex flex-col h-full space-y-4">
-      {/* Editor Box */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden p-4">
-        <TiptapEditor 
-          content={content} 
-          onChange={setContent} 
-          placeholder="Nhập nội dung trao đổi..."
-          className="mb-3"
-        />
-        <div className="flex justify-end">
-          <button
-            onClick={handleSubmit}
-            disabled={createActivity.isPending || !content.trim() || content === '<p></p>'}
-            className="h-9 px-5 bg-indigo-600 text-white text-[13px] font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            {createActivity.isPending ? 'Đang gửi...' : 'Gửi'}
-          </button>
-        </div>
-      </div>
-
-      {/* Activity Feed */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-100">
-          <h3 className="text-[14px] font-bold text-slate-800">Lịch sử trao đổi</h3>
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input 
-              type="text" 
-              placeholder="Tìm kiếm..." 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-500 w-[200px]"
-            />
+    <div className="flex flex-col lg:flex-row gap-6 items-start">
+      {/* Left Column: Editor & Feed */}
+      <div className="flex-1 min-w-0 space-y-4 w-full">
+        {/* Editor Box */}
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Nội dung trao đổi</label>
+          <TiptapEditor 
+            content={content} 
+            onChange={setContent} 
+            placeholder="Nhập nội dung trao đổi..."
+            className="mb-3"
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={handleSubmit}
+              disabled={createActivity.isPending || !content.trim() || content === '<p></p>'}
+              className="h-9 px-5 bg-indigo-600 text-white text-[13px] font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {createActivity.isPending ? 'Đang gửi...' : 'Gửi'}
+            </button>
           </div>
         </div>
 
-        <div className="p-4 flex-1 overflow-y-auto space-y-6">
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        {/* Activity Feed */}
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-slate-100">
+            <h3 className="text-[14px] font-bold text-slate-800">Lịch sử trao đổi</h3>
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input 
+                type="text" 
+                placeholder="Tìm kiếm..." 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-500 w-[200px]"
+              />
             </div>
-          ) : filteredActivities.length === 0 ? (
-            <div className="text-center py-10">
-              <p className="text-[13px] text-slate-500">Không có trao đổi nào.</p>
-            </div>
-          ) : (
-            filteredActivities.map((act: any) => (
-              <div key={act.id} className="flex gap-4">
-                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                  <User className="w-5 h-5 text-indigo-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-[13px] text-slate-800">
-                      {act.profiles?.display_name || 'Người dùng'}
-                    </span>
-                    <span className="text-[12px] text-slate-400">• {formatRelativeTime(act.created_at)}</span>
-                  </div>
-                  <div 
-                    className="prose prose-sm max-w-none text-slate-700 bg-slate-50 border border-slate-100 p-3 rounded-lg rounded-tl-none"
-                    dangerouslySetInnerHTML={{ __html: act.description || '' }}
-                  />
-                </div>
+          </div>
+
+          <div className="p-4 overflow-y-auto space-y-6">
+            {isLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
               </div>
-            ))
-          )}
+            ) : filteredActivities.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-[13px] text-slate-500">Không có trao đổi nào.</p>
+              </div>
+            ) : (
+              filteredActivities.map((act: any) => (
+                <div key={act.id} className="flex gap-4">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                    <User className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-[13px] text-slate-800">
+                        {act.profiles?.display_name || 'Người dùng'}
+                      </span>
+                      <span className="text-[12px] text-slate-400">• {formatRelativeTime(act.created_at)}</span>
+                    </div>
+                    <div 
+                      className="prose prose-sm max-w-none text-slate-700 bg-slate-50 border border-slate-100 p-3 rounded-lg rounded-tl-none"
+                      dangerouslySetInnerHTML={{ __html: act.description || '' }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right Column: Characteristics (Sticky) */}
+      <div className="w-full lg:w-[350px] shrink-0 sticky top-[136px] self-start space-y-4">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Đặc điểm khách hàng</label>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isAutoBullet}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsAutoBullet(checked);
+                  if (checked && !localCharacteristics.trim()) {
+                    setLocalCharacteristics('• ');
+                  }
+                }}
+                className="w-3 h-3 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-[11px] font-medium text-slate-500">Auto bullet (•)</span>
+            </label>
+          </div>
+          <textarea
+            value={localCharacteristics}
+            onChange={(e) => setLocalCharacteristics(e.target.value)}
+            onKeyDown={handleCharacteristicsKeyDown}
+            placeholder="Nhập đặc điểm, sở thích, lưu ý về khách hàng này..."
+            className="w-full h-[250px] lg:h-[350px] p-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-500 resize-none mb-3"
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={() => updateCharacteristicsMutation.mutate(localCharacteristics)}
+              disabled={updateCharacteristicsMutation.isPending || localCharacteristics === (customer.characteristics || '')}
+              className="w-full h-9 bg-white border border-slate-200 text-slate-700 text-[13px] font-bold rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {updateCharacteristicsMutation.isPending ? 'Đang lưu...' : 'Lưu đặc điểm'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1555,11 +1710,8 @@ function TabLichHen({ customerId }: { customerId: string }) {
   const profiles = profilesRes?.data?.data || [];
 
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    scheduled_at: '',
-    assigned_to: '',
+  const [formData, setFormData] = useState<{ scheduled_at: Date | undefined }>({
+    scheduled_at: undefined,
   });
 
   const { data: apptRes, isLoading } = useQuery({
@@ -1575,15 +1727,15 @@ function TabLichHen({ customerId }: { customerId: string }) {
   const createMutation = useMutation({
     mutationFn: () => pipelineApi.createAppointment({
       customer_id: customerId,
-      title: formData.title,
-      description: formData.description || null,
-      scheduled_at: new Date(formData.scheduled_at).toISOString(),
+      title: 'Lịch hẹn',
+      description: null,
+      scheduled_at: new Date(formData.scheduled_at!).toISOString(),
       status: 'pending',
-      assigned_to: formData.assigned_to || null,
+      assigned_to: null,
     }),
     onSuccess: () => {
       setShowForm(false);
-      setFormData({ title: '', description: '', scheduled_at: '', assigned_to: '' });
+      setFormData({ scheduled_at: undefined });
       queryClient.invalidateQueries({ queryKey: ['appointments', customerId] });
       toast.success('Đã tạo lịch hẹn');
     },
@@ -1675,47 +1827,14 @@ function TabLichHen({ customerId }: { customerId: string }) {
       {showForm && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
           <h4 className="text-[13px] font-bold text-slate-700">Tạo lịch hẹn mới</h4>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 space-y-1">
-              <label className="text-[12px] font-medium text-slate-600">Tiêu đề *</label>
-              <input
-                type="text"
-                value={formData.title}
-                onChange={e => setFormData(p => ({ ...p, title: e.target.value }))}
-                placeholder="Ví dụ: Tư vấn sản phẩm lần 2..."
-                className="w-full h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1">
               <label className="text-[12px] font-medium text-slate-600">Ngày giờ hẹn *</label>
-              <input
-                type="datetime-local"
+              <DateTimePicker24h
                 value={formData.scheduled_at}
-                onChange={e => setFormData(p => ({ ...p, scheduled_at: e.target.value }))}
-                className="w-full h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[12px] font-medium text-slate-600">Người phụ trách</label>
-              <select
-                value={formData.assigned_to}
-                onChange={e => setFormData(p => ({ ...p, assigned_to: e.target.value }))}
-                className="w-full h-8 px-3 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">-- Chọn nhân viên --</option>
-                {profiles.map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.display_name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="col-span-2 space-y-1">
-              <label className="text-[12px] font-medium text-slate-600">Ghi chú</label>
-              <textarea
-                value={formData.description}
-                onChange={e => setFormData(p => ({ ...p, description: e.target.value }))}
-                rows={2}
-                placeholder="Nội dung trao đổi, mục tiêu buổi hẹn..."
-                className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-indigo-500 resize-none"
+                onChange={(date) => setFormData(p => ({ ...p, scheduled_at: date }))}
+                placeholder="Chọn ngày giờ hẹn"
+                className="w-full"
               />
             </div>
           </div>
@@ -1728,7 +1847,7 @@ function TabLichHen({ customerId }: { customerId: string }) {
             </button>
             <button
               onClick={() => createMutation.mutate()}
-              disabled={!formData.title || !formData.scheduled_at || createMutation.isPending}
+              disabled={!formData.scheduled_at || createMutation.isPending}
               className="h-8 px-4 text-[12px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer"
             >
               {createMutation.isPending ? 'Đang lưu...' : 'Tạo lịch hẹn'}

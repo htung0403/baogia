@@ -16,6 +16,7 @@ import paymentRoutes from './routes/payment.routes.js';
 import financialRoutes from './routes/financial.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import pipelineRoutes from './routes/pipeline.routes.js';
+import customerGroupRoutes from './routes/customer-groups.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/index.js';
 
 const app = express();
@@ -86,6 +87,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/analytics', financialRoutes);
 app.use('/api/profiles', profileRoutes);
 app.use('/api/pipeline', pipelineRoutes);
+app.use('/api/customer-groups', customerGroupRoutes);
 
 // ============================================================
 // ERROR HANDLING

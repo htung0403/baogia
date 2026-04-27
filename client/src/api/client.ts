@@ -172,6 +172,22 @@ export const priceListApi = {
   publishVersion: (priceListId: string, versionId: string) =>
     api.post(`/price-lists/${priceListId}/versions/${versionId}/publish`),
 
+  updateVersion: (priceListId: string, versionId: string, data: {
+    changelog?: string;
+    items: Array<{
+      product_id: string;
+      dealer_price?: number | null;
+      retail_price?: number | null;
+      public_price?: number | null;
+      note?: string;
+      sort_order?: number;
+    }>;
+  }) =>
+    api.put(`/price-lists/${priceListId}/versions/${versionId}`, data),
+
+  deleteVersion: (priceListId: string, versionId: string) =>
+    api.delete(`/price-lists/${priceListId}/versions/${versionId}`),
+
   // Customer assignment
   assignCustomers: (priceListId: string, customerIds: string[]) =>
     api.post(`/price-lists/${priceListId}/customers`, { customer_ids: customerIds }),
@@ -410,5 +426,23 @@ export const pipelineApi = {
 
   deleteCost: (id: string) =>
     api.delete(`/pipeline/costs/${id}`),
+};
+
+// --- Customer Groups ---
+export const customerGroupApi = {
+  list: () =>
+    api.get('/customer-groups'),
+
+  get: (id: string) =>
+    api.get(`/customer-groups/${id}`),
+
+  create: (data: { name: string; code?: string | null; description?: string | null; sort_order?: number }) =>
+    api.post('/customer-groups', data),
+
+  update: (id: string, data: { name?: string; code?: string | null; description?: string | null; sort_order?: number }) =>
+    api.put(`/customer-groups/${id}`, data),
+
+  delete: (id: string) =>
+    api.delete(`/customer-groups/${id}`),
 };
 

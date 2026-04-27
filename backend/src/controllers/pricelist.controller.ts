@@ -393,13 +393,22 @@ export async function createVersion(req: Request, res: Response, next: NextFunct
 
     // Fetch product data for snapshots
     const productIds = input.items.map((item) => item.product_id);
-    const { data: products, error: productError } = await supabaseAdmin
-      .from('products')
-      .select('id, name, sku, specs, image_urls, unit')
-      .in('id', productIds)
-      .is('deleted_at', null);
-
-    if (productError) throw ApiError.internal(productError.message);
+    
+    const CHUNK_SIZE = 50;
+    const products: any[] = [];
+    
+    for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+      const chunk = productIds.slice(i, i + CHUNK_SIZE);
+      const { data: chunkProducts, error: chunkError } = await supabaseAdmin
+        .from('products')
+        .select('id, name, sku, specs, image_urls, unit')
+        .in('id', chunk);
+        
+      if (chunkError) throw ApiError.internal(chunkError.message);
+      if (chunkProducts) {
+        products.push(...chunkProducts);
+      }
+    }
 
     const productMap = new Map((products ?? []).map((p: any) => [p.id, p]));
 
@@ -493,6 +502,136 @@ export async function getVersion(req: Request, res: Response, next: NextFunction
       ...version,
       items: items ?? [],
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateVersion(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    const { id: priceListId, versionId } = req.params;
+    const input = createVersionSchema.parse(req.body);
+
+    const { data: version } = await supabaseAdmin
+      .from('price_list_versions')
+      .select('*')
+      .eq('id', versionId)
+      .eq('price_list_id', priceListId)
+      .eq('status', 'draft')
+      .single();
+
+    if (!version) throw ApiError.badRequest('Phiên bản không tồn tại hoặc không ở trạng thái draft');
+
+    const productIds = input.items.map((item) => item.product_id);
+    const CHUNK_SIZE = 50;
+    const products: any[] = [];
+    
+    for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+      const chunk = productIds.slice(i, i + CHUNK_SIZE);
+      const { data: chunkProducts, error: chunkError } = await supabaseAdmin
+        .from('products')
+        .select('id, name, sku, specs, image_urls, unit')
+        .in('id', chunk);
+      if (chunkError) throw ApiError.internal(chunkError.message);
+      if (chunkProducts) products.push(...chunkProducts);
+    }
+
+    const productMap = new Map(products.map((p: any) => [p.id, p]));
+    const missingProducts = productIds.filter((pid) => !productMap.has(pid));
+    if (missingProducts.length > 0) {
+      throw ApiError.badRequest(`Sản phẩm không tồn tại: ${missingProducts.join(', ')}`);
+    }
+
+    await supabaseAdmin.from('price_list_items').delete().eq('version_id', versionId);
+
+    const itemsToInsert = input.items.map((item, index) => {
+      const product = productMap.get(item.product_id)!;
+      return {
+        version_id: versionId,
+        product_id: item.product_id,
+        product_name_snapshot: product.name,
+        product_sku_snapshot: product.sku,
+        product_specs_snapshot: product.specs,
+        product_image_snapshot: product.image_urls?.[0] ?? null,
+        product_unit_snapshot: product.unit,
+        dealer_price: item.dealer_price ?? null,
+        retail_price: item.retail_price ?? null,
+        public_price: item.public_price ?? null,
+        note: item.note ?? null,
+        sort_order: item.sort_order ?? index,
+        is_new: false,
+        is_changed: false,
+      };
+    });
+
+    const { error: itemsError } = await supabaseAdmin.from('price_list_items').insert(itemsToInsert);
+    if (itemsError) throw ApiError.internal(itemsError.message);
+
+    if (input.changelog !== undefined) {
+      await supabaseAdmin
+        .from('price_list_versions')
+        .update({ changelog: input.changelog })
+        .eq('id', versionId);
+    }
+
+    const { data: updatedVersion } = await supabaseAdmin
+      .from('price_list_versions')
+      .select('*')
+      .eq('id', versionId)
+      .single();
+
+    const { data: createdItems } = await supabaseAdmin
+      .from('price_list_items')
+      .select('*')
+      .eq('version_id', versionId)
+      .order('sort_order', { ascending: true });
+
+    sendSuccess(res, { ...updatedVersion, items: createdItems ?? [] }, 'Cập nhật phiên bản thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteVersion(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    const { id: priceListId, versionId } = req.params;
+
+    console.log('[DELETE_VERSION_START] Trying to delete version:', versionId, 'for priceList:', priceListId);
+
+    const { data: version, error: findError } = await supabaseAdmin
+      .from('price_list_versions')
+      .select('*')
+      .eq('id', versionId)
+      .eq('price_list_id', priceListId)
+      .eq('status', 'draft')
+      .single();
+
+    if (findError || !version) {
+      console.error('[PRICE_LIST_VERSION_DELETE_ERROR] Version not found or not draft. findError:', findError);
+      throw ApiError.badRequest('Phiên bản không tồn tại hoặc không ở trạng thái draft');
+    }
+
+    await supabaseAdmin
+      .from('view_sessions')
+      .update({ version_id: null })
+      .eq('version_id', versionId);
+
+    const { data: deleteData, error } = await supabaseAdmin
+      .from('price_list_versions')
+      .delete()
+      .match({ id: versionId })
+      .select();
+
+    if (error) {
+      console.error('[PRICE_LIST_VERSION_DELETE_ERROR] DB delete failed:', error);
+      throw ApiError.internal(error.message);
+    }
+
+    console.log('[DELETE_VERSION_SUCCESS] Version deleted from DB. deleteData:', deleteData);
+
+    sendSuccess(res, { id: versionId }, `Xóa phiên bản thành công`);
   } catch (error) {
     next(error);
   }

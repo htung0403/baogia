@@ -7,6 +7,8 @@ import {
   deletePriceList,
   createVersion,
   getVersion,
+  updateVersion,
+  deleteVersion,
   publishVersion,
   assignCustomers,
   unassignCustomer,
@@ -30,6 +32,8 @@ router.delete('/:id', requireAdminOrStaff, deletePriceList);
 
 // Version management (admin/staff only)
 router.post('/:id/versions', requireAdminOrStaff, createVersion);
+router.put('/:id/versions/:versionId', requireAdminOrStaff, updateVersion);
+router.delete('/:id/versions/:versionId', requireAdminOrStaff, deleteVersion);
 router.post('/:id/versions/:versionId/publish', requireAdminOrStaff, publishVersion);
 
 // Customer assignment (admin/staff only)

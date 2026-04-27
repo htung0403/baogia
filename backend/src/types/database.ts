@@ -36,6 +36,8 @@ export interface Customer {
   email: string | null;
   address: string | null;
   notes: string | null;
+  tiktok_url: string | null;
+  characteristics: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
