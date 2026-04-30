@@ -91,26 +91,33 @@ export async function listPriceLists(req: Request, res: Response, next: NextFunc
     const { data, error, count } = await query;
     if (error) throw ApiError.internal(error.message);
 
-    // Attach version count and customer count for each list
-    const enriched = await Promise.all(
-      (data ?? []).map(async (pl: any) => {
-        const [versionRes, customerRes] = await Promise.all([
-          supabaseAdmin
-            .from('price_list_versions')
-            .select('id', { count: 'exact', head: true })
-            .eq('price_list_id', pl.id),
-          supabaseAdmin
-            .from('price_list_customers')
-            .select('id', { count: 'exact', head: true })
-            .eq('price_list_id', pl.id),
-        ]);
-        return {
-          ...pl,
-          version_count: versionRes.count ?? 0,
-          customer_count: customerRes.count ?? 0,
-        };
-      })
-    );
+    // Batch fetch counts thay vì N+1 queries
+    const plIds = (data ?? []).map((pl: any) => pl.id);
+    const [versionCounts, customerCounts] = await Promise.all([
+      supabaseAdmin
+        .from('price_list_versions')
+        .select('price_list_id')
+        .in('price_list_id', plIds),
+      supabaseAdmin
+        .from('price_list_customers')
+        .select('price_list_id')
+        .in('price_list_id', plIds),
+    ]);
+
+    const vCountMap: Record<string, number> = {};
+    for (const v of (versionCounts.data ?? [])) {
+      vCountMap[v.price_list_id] = (vCountMap[v.price_list_id] ?? 0) + 1;
+    }
+    const cCountMap: Record<string, number> = {};
+    for (const c of (customerCounts.data ?? [])) {
+      cCountMap[c.price_list_id] = (cCountMap[c.price_list_id] ?? 0) + 1;
+    }
+
+    const enriched = (data ?? []).map((pl: any) => ({
+      ...pl,
+      version_count: vCountMap[pl.id] ?? 0,
+      customer_count: cCountMap[pl.id] ?? 0,
+    }));
 
     sendSuccess(res, enriched, undefined, 200, {
       page, limit, total: count ?? 0, totalPages: Math.ceil((count ?? 0) / limit),

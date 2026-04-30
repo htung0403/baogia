@@ -306,72 +306,83 @@ export async function getCustomerStats(req: Request, res: Response, next: NextFu
 
     if (custError || !customer) throw ApiError.notFound('Khách hàng không tồn tại');
 
-    // 1. View sessions (lịch sử xem báo giá)
-    const { data: sessions } = await supabaseAdmin
-      .from('view_sessions')
-      .select('*, price_lists(id, title, status)')
-      .eq('customer_id', id)
-      .order('started_at', { ascending: false })
-      .limit(50);
+    const [
+      { data: sessions },
+      { data: assignments },
+      { data: orders },
+      { data: payments },
+      { data: activityRow },
+      { data: stageHistory },
+      { data: financialRow },
+      { data: lastActRow },
+    ] = await Promise.all([
+      // 1. View sessions (lịch sử xem báo giá)
+      supabaseAdmin
+        .from('view_sessions')
+        .select('*, price_lists(id, title, status)')
+        .eq('customer_id', id)
+        .order('started_at', { ascending: false })
+        .limit(50),
+      
+      // 2. Assigned price lists (báo giá được giao)
+      supabaseAdmin
+        .from('price_list_customers')
+        .select('*, price_lists(id, title, status, created_at, updated_at)')
+        .eq('customer_id', id)
+        .order('assigned_at', { ascending: false }),
 
-    // 2. Assigned price lists (báo giá được giao)
-    const { data: assignments } = await supabaseAdmin
-      .from('price_list_customers')
-      .select('*, price_lists(id, title, status, created_at, updated_at)')
-      .eq('customer_id', id)
-      .order('assigned_at', { ascending: false });
+      // 3. Orders (đơn hàng)
+      supabaseAdmin
+        .from('orders')
+        .select('*')
+        .eq('customer_id', id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false }),
 
-    // 3. Orders (đơn hàng)
-    const { data: orders } = await supabaseAdmin
-      .from('orders')
-      .select('*')
-      .eq('customer_id', id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
+      // 4. Payments (lịch sử thanh toán)
+      supabaseAdmin
+        .from('payments')
+        .select('*')
+        .eq('customer_id', id)
+        .order('paid_at', { ascending: false }),
 
-    // 4. Payments (lịch sử thanh toán)
-    const { data: payments } = await supabaseAdmin
-      .from('payments')
-      .select('*')
-      .eq('customer_id', id)
-      .order('paid_at', { ascending: false });
+      // 5. Activity summary (tóm tắt lượt xem)
+      supabaseAdmin
+        .from('v_customer_activity')
+        .select('total_sessions, last_viewed_at, total_duration_seconds')
+        .eq('customer_id', id)
+        .single(),
 
-    // 5. Activity summary (tóm tắt lượt xem)
-    const { data: activityRow } = await supabaseAdmin
-      .from('v_customer_activity')
-      .select('total_sessions, last_viewed_at, total_duration_seconds')
-      .eq('customer_id', id)
-      .single();
+      // 6. Stage transition history (lịch sử chuyển trạng thái pipeline)
+      supabaseAdmin
+        .from('customer_stage_history')
+        .select(`
+          id,
+          moved_at,
+          note,
+          from_stage:from_stage_id(id, name),
+          to_stage:to_stage_id(id, name),
+          moved_by_profile:moved_by(display_name)
+        `)
+        .eq('customer_id', id)
+        .order('moved_at', { ascending: false }),
 
-    // 6. Stage transition history (lịch sử chuyển trạng thái pipeline)
-    const { data: stageHistory } = await supabaseAdmin
-      .from('customer_stage_history')
-      .select(`
-        id,
-        moved_at,
-        note,
-        from_stage:from_stage_id(id, name),
-        to_stage:to_stage_id(id, name),
-        moved_by_profile:moved_by(display_name)
-      `)
-      .eq('customer_id', id)
-      .order('moved_at', { ascending: false });
+      // 7. Financial summary (tổng hợp tài chính)
+      supabaseAdmin
+        .from('v_customer_financials')
+        .select('total_orders_amount, total_paid, total_debt')
+        .eq('customer_id', id)
+        .single(),
 
-    // 7. Financial summary (tổng hợp tài chính)
-    const { data: financialRow } = await supabaseAdmin
-      .from('v_customer_financials')
-      .select('total_orders_amount, total_paid, total_debt')
-      .eq('customer_id', id)
-      .single();
-
-    // 8. Last activity date
-    const { data: lastActRow } = await supabaseAdmin
-      .from('customer_activities')
-      .select('created_at')
-      .eq('customer_id', id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      // 8. Last activity date
+      supabaseAdmin
+        .from('customer_activities')
+        .select('created_at')
+        .eq('customer_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+    ]);
 
     const lastActivityAt = lastActRow?.created_at ?? null;
 

@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 
 import authRoutes from './routes/auth.routes.js';
 import productRoutes from './routes/product.routes.js';
@@ -41,6 +42,17 @@ app.use(cors({
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Gzip/brotli compression
+app.use(compression());
+
+// Cache headers cho GET API
+app.use('/api/', (req, res, next) => {
+  if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=59');
+  }
+  next();
+});
 
 // Logging
 if (process.env.NODE_ENV !== 'test') {
