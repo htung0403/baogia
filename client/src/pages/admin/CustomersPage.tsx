@@ -278,7 +278,7 @@ export default function CustomersPage() {
       setCustomerToDelete(null);
       toast.success('Đã xóa khách hàng');
     },
-    onError: (error: any, id, context) => {
+    onError: (error: any, _id, context) => {
       if (context?.previousList) {
         queryClient.setQueryData(['customers-list-all'], context.previousList);
       }
@@ -316,7 +316,7 @@ export default function CustomersPage() {
       setShowBulkDeleteConfirm(false);
       toast.success('Đã xóa các khách hàng đã chọn');
     },
-    onError: (error: any, ids, context) => {
+    onError: (error: any, _ids, context) => {
       if (context?.previousList) {
         queryClient.setQueryData(['customers-list-all'], context.previousList);
       }
