@@ -252,29 +252,74 @@ export default function CustomersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => customerApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customers-list-all'] });
-      queryClient.invalidateQueries({ queryKey: ['customers-all'] });
-      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['customers-list-all'] });
+      const previousList = queryClient.getQueryData(['customers-list-all']);
+      
+      queryClient.setQueryData(['customers-list-all'], (old: any) => {
+        if (!old?.data?.data) return old;
+        return {
+          ...old,
+          data: {
+            ...old.data,
+            data: old.data.data.filter((c: any) => c.id !== id),
+            total: Math.max(0, (old.data.total || 1) - 1)
+          }
+        };
+      });
+      return { previousList };
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['customers-list-all'] }),
+        queryClient.invalidateQueries({ queryKey: ['customers-all'] }),
+        queryClient.invalidateQueries({ queryKey: ['pipeline-board'] }),
+      ]);
       setCustomerToDelete(null);
       toast.success('Đã xóa khách hàng');
     },
-    onError: (error: any) => {
+    onError: (error: any, id, context) => {
+      if (context?.previousList) {
+        queryClient.setQueryData(['customers-list-all'], context.previousList);
+      }
       toast.error('Không thể xóa khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
     },
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => Promise.all(ids.map((id) => customerApi.delete(id))),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customers-list-all'] });
-      queryClient.invalidateQueries({ queryKey: ['customers-all'] });
-      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ['customers-list-all'] });
+      const previousList = queryClient.getQueryData(['customers-list-all']);
+      
+      queryClient.setQueryData(['customers-list-all'], (old: any) => {
+        if (!old?.data?.data) return old;
+        const idSet = new Set(ids);
+        return {
+          ...old,
+          data: {
+            ...old.data,
+            data: old.data.data.filter((c: any) => !idSet.has(c.id)),
+            total: Math.max(0, (old.data.total || 0) - ids.length)
+          }
+        };
+      });
+      return { previousList };
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['customers-list-all'] }),
+        queryClient.invalidateQueries({ queryKey: ['customers-all'] }),
+        queryClient.invalidateQueries({ queryKey: ['pipeline-board'] }),
+      ]);
       setSelectedIds(new Set());
       setShowBulkDeleteConfirm(false);
       toast.success('Đã xóa các khách hàng đã chọn');
     },
-    onError: (error: any) => {
+    onError: (error: any, ids, context) => {
+      if (context?.previousList) {
+        queryClient.setQueryData(['customers-list-all'], context.previousList);
+      }
       toast.error('Không thể xóa khách hàng', error?.response?.data?.message || 'Vui lòng thử lại');
     },
   });
