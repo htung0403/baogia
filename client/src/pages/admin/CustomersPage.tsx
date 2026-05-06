@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { customerApi, profilesApi, pipelineApi, orderApi, customerGroupApi } from '@/api/client';
+import { customerApi, profilesApi, pipelineApi, orderApi, customerGroupApi, careScheduleApi } from '@/api/client';
 import { formatDate } from '@/lib/utils';
-import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, Order } from '@/types';
+import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, Order, CareScheduleEvent } from '@/types';
+import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import PipelineSettingsModal from './PipelineSettingsModal';
 import CustomerSlideOver from '@/components/customers/CustomerSlideOver';
@@ -26,6 +27,7 @@ import {
   MessageSquare,
   DollarSign,
   AlertTriangle,
+  CalendarClock,
 } from 'lucide-react';
 import TiptapEditor from '@/components/ui/TiptapEditor';
 import {
@@ -167,6 +169,27 @@ export default function CustomersPage() {
     enabled: activeTab === 'list' || activeTab === 'stats',
   });
   const board: BoardResponse = boardRes?.data?.data ?? { columns: [], total_customers: 0 };
+
+  const today = new Date();
+  const monthKey = format(today, 'yyyy-MM');
+  const todayStr = format(today, 'yyyy-MM-dd');
+
+  const { data: careEventsRes } = useQuery({
+    queryKey: ['care-events', monthKey],
+    queryFn: () => careScheduleApi.listEvents({ month: monthKey }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const careEvents: CareScheduleEvent[] = careEventsRes?.data?.data ?? [];
+
+  const todayCareCount = useMemo(() => {
+    return careEvents.filter(event => {
+      const hasTime = event.scheduled_date.includes('T') && !event.scheduled_date.endsWith('00:00:00.000Z');
+      const dateStr = hasTime
+        ? format(new Date(event.scheduled_date), 'yyyy-MM-dd')
+        : event.scheduled_date.split('T')[0];
+      return dateStr === todayStr && (event.status === 'pending' || event.status === 'rescheduled');
+    }).length;
+  }, [careEvents, todayStr]);
 
   const stageMap = useMemo(() => {
     const map = new Map<string, { id: string; name: string }>();
@@ -523,7 +546,21 @@ export default function CustomersPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">Khách hàng</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Khách hàng</h1>
+        <button
+          onClick={() => navigate('/admin/care-calendar')}
+          className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-2.5 hover:border-amber-300 hover:bg-amber-50/50 transition-all cursor-pointer shadow-sm"
+        >
+          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100">
+            <CalendarClock className="w-4.5 h-4.5 text-amber-600" />
+          </div>
+          <div className="text-left">
+            <div className="text-2xl font-bold text-amber-600 leading-none">{todayCareCount}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Cần chăm sóc hôm nay</div>
+          </div>
+        </button>
+      </div>
 
       {/* Tab Bar — same pattern as AnalyticsPage.tsx */}
       <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
