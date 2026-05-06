@@ -23,6 +23,7 @@ import {
   Edit,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function PriceListDetailPage() {
