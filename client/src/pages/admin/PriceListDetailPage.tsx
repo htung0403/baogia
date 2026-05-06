@@ -3,7 +3,7 @@ import { useToast } from '@/components/ui/toast';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { priceListApi, productApi, customerApi, customerGroupApi } from '@/api/client';
+import { priceListApi, productApi, customerApi, customerGroupApi, productGroupApi } from '@/api/client';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { PriceListDetail, PriceListItem, PriceListVersion, Product } from '@/types';
 import {
@@ -16,11 +16,13 @@ import {
   X,
   Search,
   Check,
-  AlertTriangle,
   Download,
   Pencil,
   Trash2,
   Eye,
+  Edit,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 export default function PriceListDetailPage() {
@@ -36,6 +38,19 @@ export default function PriceListDetailPage() {
   const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
   const [versionToDelete, setVersionToDelete] = useState<{ id: string; version_number: number } | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [isEditingHeader, setIsEditingHeader] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(true);
+  const [headerForm, setHeaderForm] = useState({
+    title: '',
+    company_name: '',
+    company_address: '',
+    sales_person: '',
+    sales_phone: '',
+    notice_text: '',
+    legend_blue_text: '',
+    legend_yellow_text: '',
+    legend_orange_text: '',
+  });
 
   const { data: res, isLoading } = useQuery({
     queryKey: ['price-list', id],
@@ -56,6 +71,57 @@ export default function PriceListDetailPage() {
   });
 
   const displayItems: PriceListItem[] = versionRes?.data?.data?.items ?? detail?.items ?? [];
+
+  const { data: productGroupsRes } = useQuery({
+    queryKey: ['product-groups'],
+    queryFn: () => productGroupApi.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const productGroups: Array<{ id: string; name: string; sort_order: number }> = (productGroupsRes?.data?.data ?? []) as any;
+
+  const groupedDisplayItems = React.useMemo(() => {
+    const map = new Map<string | null, PriceListItem[]>();
+    for (const item of displayItems) {
+      const key = (item as any).product_group_id ?? null;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    return map;
+  }, [displayItems]);
+
+  const groupedSections = React.useMemo(() => {
+    const result: { id: string | null; name: string; items: PriceListItem[] }[] = [];
+    const sortedGroups = [...productGroups].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    for (const g of sortedGroups) {
+      const items = groupedDisplayItems.get(g.id) ?? [];
+      if (items.length > 0) result.push({ id: g.id, name: g.name, items });
+    }
+    const ungrouped = groupedDisplayItems.get(null) ?? [];
+    if (ungrouped.length > 0) result.push({ id: null, name: 'Khác', items: ungrouped });
+    return result;
+  }, [productGroups, groupedDisplayItems]);
+
+  const groupedDraftItems = React.useMemo(() => {
+    const map = new Map<string | null, DraftItem[]>();
+    for (const item of draftItems) {
+      const key = item.product_group_id ?? null;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    return map;
+  }, [draftItems]);
+
+  const groupedDraftSections = React.useMemo(() => {
+    const result: { id: string | null; name: string; items: DraftItem[] }[] = [];
+    const sortedGroups = [...productGroups].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    for (const g of sortedGroups) {
+      const items = groupedDraftItems.get(g.id) ?? [];
+      if (items.length > 0) result.push({ id: g.id, name: g.name, items });
+    }
+    const ungrouped = groupedDraftItems.get(null) ?? [];
+    if (ungrouped.length > 0) result.push({ id: null, name: 'Khác', items: ungrouped });
+    return result;
+  }, [productGroups, groupedDraftItems]);
 
   const handleExportExcel = () => {
     if (!detail || displayItems.length === 0) return;
@@ -142,6 +208,16 @@ export default function PriceListDetailPage() {
     onError: (error: any) => toast.error('Lỗi cập nhật phiên bản', error?.response?.data?.message || 'Vui lòng thử lại'),
   });
 
+  const updatePriceListMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => priceListApi.update(id!, data as any),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-list', id] });
+      toast.success('Cập nhật thông tin thành công');
+      setIsEditingHeader(false);
+    },
+    onError: (error: any) => toast.error('Lỗi cập nhật', error?.response?.data?.message || 'Vui lòng thử lại'),
+  });
+
   const deleteVersionMutation = useMutation({
     mutationFn: (versionId: string) => priceListApi.deleteVersion(id!, versionId),
     onSuccess: () => {
@@ -171,6 +247,7 @@ export default function PriceListDetailPage() {
           product_sku: item.product_sku_snapshot,
           product_image: item.product_image_snapshot,
           product_unit: item.product_unit_snapshot,
+          product_group_id: (item as any).product_group_id ?? null,
           dealer_price: item.dealer_price ?? 0,
           retail_price: item.retail_price ?? 0,
           public_price: item.public_price ?? 0,
@@ -192,6 +269,7 @@ export default function PriceListDetailPage() {
           product_sku: item.product_sku_snapshot,
           product_image: item.product_image_snapshot,
           product_unit: item.product_unit_snapshot,
+          product_group_id: (item as any).product_group_id ?? null,
           dealer_price: item.dealer_price ?? 0,
           retail_price: item.retail_price ?? 0,
           public_price: item.public_price ?? 0,
@@ -216,6 +294,7 @@ export default function PriceListDetailPage() {
         product_sku: p.sku,
         product_image: p.image_urls?.[0] ?? null,
         product_unit: p.unit,
+        product_group_id: p.product_group_id ?? null,
         dealer_price: p.base_price,
         retail_price: 0,
         public_price: 0,
@@ -295,6 +374,46 @@ export default function PriceListDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {isEditingHeader ? (
+            <>
+              <button
+                onClick={() => setIsEditingHeader(false)}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-md hover:bg-accent transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                Hủy
+              </button>
+              <button
+                onClick={() => updatePriceListMutation.mutate(headerForm)}
+                disabled={updatePriceListMutation.isPending}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium text-white bg-primary rounded-md hover:bg-primary/90 disabled:opacity-40 transition-colors cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {updatePriceListMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => {
+                setHeaderForm({
+                  title: detail.title || '',
+                  company_name: (detail as any).company_name || '',
+                  company_address: (detail as any).company_address || '',
+                  sales_person: (detail as any).sales_person || '',
+                  sales_phone: (detail as any).sales_phone || '',
+                  notice_text: (detail as any).notice_text || '',
+                  legend_blue_text: (detail as any).legend_blue_text || '',
+                  legend_yellow_text: (detail as any).legend_yellow_text || '',
+                  legend_orange_text: (detail as any).legend_orange_text || '',
+                });
+                setIsEditingHeader(true);
+              }}
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-md hover:bg-accent transition-colors cursor-pointer"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Sửa thông tin
+            </button>
+          )}
           <button
             onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium border rounded-md hover:bg-accent transition-colors cursor-pointer"
@@ -326,7 +445,7 @@ export default function PriceListDetailPage() {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <Edit className="w-4 h-4 text-amber-600" />
               <span className="text-[13px] font-medium text-amber-800">
                 {editingVersionId
                   ? `Đang chỉnh sửa phiên bản v${detail.versions.find((v: PriceListVersion) => v.id === editingVersionId)?.version_number} (${draftItems.length} thiết bị)`
@@ -374,44 +493,157 @@ export default function PriceListDetailPage() {
         <div className="p-6 border-b border-black">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
-              <h2 className="text-xl font-bold uppercase tracking-wide">BẢNG BÁO GIÁ ĐẠI LÝ 2026</h2>
+              {isEditingHeader ? (
+                <input
+                  type="text"
+                  value={headerForm.title}
+                  onChange={(e) => setHeaderForm({ ...headerForm, title: e.target.value })}
+                  placeholder="Tiêu đề bảng giá"
+                  className="text-xl font-bold uppercase tracking-wide w-full bg-white border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              ) : (
+                <h2 className="text-xl font-bold uppercase tracking-wide">{detail.title || 'BẢNG BÁO GIÁ'}</h2>
+              )}
               <div className="mt-4 space-y-1 text-[13px]">
-                <p><span className="font-semibold">Kinh doanh:</span> Nguyễn Văn Tập - 0962.864.222</p>
+                {isEditingHeader ? (
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold shrink-0">Kinh doanh:</span>
+                    <input
+                      type="text"
+                      value={headerForm.sales_person}
+                      onChange={(e) => setHeaderForm({ ...headerForm, sales_person: e.target.value })}
+                      placeholder="Tên người kinh doanh"
+                      className="flex-1 h-7 px-2 border border-gray-300 rounded text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <span className="text-[11px] text-gray-500">-</span>
+                    <input
+                      type="text"
+                      value={headerForm.sales_phone}
+                      onChange={(e) => setHeaderForm({ ...headerForm, sales_phone: e.target.value })}
+                      placeholder="SĐT"
+                      className="w-32 h-7 px-2 border border-gray-300 rounded text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                ) : (
+                  (detail as any).sales_person ? (
+                    <p>
+                      <span className="font-semibold">Kinh doanh:</span> {(detail as any).sales_person}
+                      {(detail as any).sales_phone ? ` - ${(detail as any).sales_phone}` : ''}
+                    </p>
+                  ) : (
+                    <p><span className="font-semibold">Kinh doanh:</span> Nguyễn Văn Tập - 0962.864.222</p>
+                  )
+                )}
                 <p><span className="font-semibold">Áp dụng từ:</span> {formatDate(detail.created_at)}</p>
               </div>
             </div>
             <div className="text-right flex-1">
-              <h2 className="text-xl font-bold uppercase tracking-wide">CÔNG TY TNHH THƯƠNG MẠI ĐIỆN TỬ TLINK</h2>
-              <p className="mt-4 text-[13px] italic"><span className="font-semibold not-italic">Địa chỉ:</span> Xuân Lai, Gia Bình, Bắc Ninh</p>
+              {isEditingHeader ? (
+                <input
+                  type="text"
+                  value={headerForm.company_name}
+                  onChange={(e) => setHeaderForm({ ...headerForm, company_name: e.target.value })}
+                  placeholder="Tên công ty"
+                  className="text-xl font-bold uppercase tracking-wide w-full bg-white border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              ) : (
+                <h2 className="text-xl font-bold uppercase tracking-wide">{(detail as any).company_name || 'CÔNG TY TNHH THƯƠNG MẠI ĐIỆN TỬ TLINK'}</h2>
+              )}
+              {isEditingHeader ? (
+                <div className="mt-4 flex items-center gap-2 justify-end">
+                  <span className="font-semibold not-italic text-[13px] shrink-0">Địa chỉ:</span>
+                  <input
+                    type="text"
+                    value={headerForm.company_address}
+                    onChange={(e) => setHeaderForm({ ...headerForm, company_address: e.target.value })}
+                    placeholder="Địa chỉ công ty"
+                    className="flex-1 h-7 px-2 border border-gray-300 rounded text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-[13px] italic">
+                  <span className="font-semibold not-italic">Địa chỉ:</span> {(detail as any).company_address || 'Xuân Lai, Gia Bình, Bắc Ninh'}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="space-y-2 mt-4">
-            <p className="text-[12px] text-justify leading-relaxed">
-              <span className="font-bold">Lưu ý:</span> Báo giá này dành riêng cho Quý Đại lý, mang tính nội bộ. Quý Đại lý vui lòng KHÔNG công khai dưới mọi hình thức để đảm bảo quyền lợi cho cả hai bên.
-            </p>
-            <div className="flex flex-col gap-1 mt-2">
-              <div className="inline-flex items-center gap-2">
-                <span className="w-40 h-5 bg-[#00AEEF] flex items-center justify-center text-[10px] font-bold text-white border border-black/20">Phần tô màu xanh</span>
-                <span className="text-[11px]">là giá Đại lý niêm yết trên các phương tiện truyền thông và MXH</span>
+            {isEditingHeader ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 uppercase block mb-1">Nội dung Lưu ý</label>
+                  <textarea
+                    value={headerForm.notice_text}
+                    onChange={(e) => setHeaderForm({ ...headerForm, notice_text: e.target.value })}
+                    placeholder="Nội dung lưu ý..."
+                    rows={2}
+                    className="w-full px-2 py-1.5 text-[12px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold text-gray-500 uppercase block">Chú thích màu sắc</label>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-40 h-5 bg-[#00AEEF] flex items-center justify-center text-[10px] font-bold text-white border border-black/20 shrink-0">Phần tô màu xanh</span>
+                    <input
+                      type="text"
+                      value={headerForm.legend_blue_text}
+                      onChange={(e) => setHeaderForm({ ...headerForm, legend_blue_text: e.target.value })}
+                      placeholder="Mô tả màu xanh"
+                      className="flex-1 h-7 px-2 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-40 h-5 bg-[#FFD700] flex items-center justify-center text-[10px] font-bold border border-black/20 shrink-0">Phần tô màu vàng</span>
+                    <input
+                      type="text"
+                      value={headerForm.legend_yellow_text}
+                      onChange={(e) => setHeaderForm({ ...headerForm, legend_yellow_text: e.target.value })}
+                      placeholder="Mô tả màu vàng"
+                      className="flex-1 h-7 px-2 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-40 h-5 bg-[#F7941D] flex items-center justify-center text-[10px] font-bold text-white border border-black/20 shrink-0">Phần tô màu cam</span>
+                    <input
+                      type="text"
+                      value={headerForm.legend_orange_text}
+                      onChange={(e) => setHeaderForm({ ...headerForm, legend_orange_text: e.target.value })}
+                      placeholder="Mô tả màu cam"
+                      className="flex-1 h-7 px-2 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="inline-flex items-center gap-2">
-                <span className="w-40 h-5 bg-[#FFD700] flex items-center justify-center text-[10px] font-bold border border-black/20">Phần tô màu vàng</span>
-                <span className="text-[11px]">là những sản phẩm thay đổi giá</span>
-              </div>
-              <div className="inline-flex items-center gap-2">
-                <span className="w-40 h-5 bg-[#F7941D] flex items-center justify-center text-[10px] font-bold text-white border border-black/20">Phần tô màu cam</span>
-                <span className="text-[11px]">là những sản phẩm mới ra mắt</span>
-              </div>
-            </div>
+            ) : (
+              <>
+                <p className="text-[12px] text-justify leading-relaxed">
+                  <span className="font-bold">Lưu ý:</span> {(detail as any).notice_text || 'Báo giá này dành riêng cho Quý Đại lý, mang tính nội bộ. Quý Đại lý vui lòng KHÔNG công khai dưới mọi hình thức để đảm bảo quyền lợi cho cả hai bên.'}
+                </p>
+                <div className="flex flex-col gap-1 mt-2">
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-40 h-5 bg-[#00AEEF] flex items-center justify-center text-[10px] font-bold text-white border border-black/20">Phần tô màu xanh</span>
+                    <span className="text-[11px]">{(detail as any).legend_blue_text || 'là giá Đại lý niêm yết trên các phương tiện truyền thông và MXH'}</span>
+                  </div>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-40 h-5 bg-[#FFD700] flex items-center justify-center text-[10px] font-bold border border-black/20">Phần tô màu vàng</span>
+                    <span className="text-[11px]">{(detail as any).legend_yellow_text || 'là những sản phẩm thay đổi giá'}</span>
+                  </div>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-40 h-5 bg-[#F7941D] flex items-center justify-center text-[10px] font-bold text-white border border-black/20">Phần tô màu cam</span>
+                    <span className="text-[11px]">{(detail as any).legend_orange_text || 'là những sản phẩm mới ra mắt'}</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
         {/* Quotation Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
           <table className="w-full border-collapse text-[13px]">
             <thead>
-              <tr className="bg-[#D1D3D4] border-b border-black">
+              <tr className="bg-[#D1D3D4] border-b border-black sticky top-0 z-10">
                 <th className="border-r border-black py-2 px-1 font-bold w-12 text-center uppercase">STT</th>
                 <th className="border-r border-black py-2 px-3 font-bold min-w-[220px] text-center uppercase">Thiết bị</th>
                 <th className="border-r border-black py-2 px-3 font-bold w-[280px] text-center uppercase">Hình ảnh</th>
@@ -422,107 +654,136 @@ export default function PriceListDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {/* Table Body Groups could go here - for now flat list */}
-              <tr className="bg-[#E6E7E8] border-b border-black">
-                <td colSpan={7} className="py-1 px-3 font-bold italic uppercase">MAIN - CÔNG SUẤT</td>
-              </tr>
-
               {isBuilding ? (
-                draftItems.map((item, index) => (
-                  <tr key={item.product_id} className="border-b border-black hover:bg-gray-50 transition-colors group">
-                    <td className="border-r border-black py-4 px-1 text-center font-semibold">{index + 1}</td>
-                    <td className="border-r border-black py-4 px-3 align-top">
-                      <div className="font-bold text-[14px] leading-snug">{item.product_name}</div>
-                      <div className="text-[11px] mt-1.5 whitespace-pre-wrap text-gray-700 leading-normal">
-                        - Loại: {item.product_unit || 'TB'}<br/>
-                        - SKU: {item.product_sku}
-                      </div>
-                    </td>
-                    <td className="border-r border-black py-2 px-2 text-center">
-                      <div className="relative group/img inline-block">
-                        {item.product_image ? (
-                          <img src={item.product_image} alt="" className="max-h-32 max-w-full object-contain mx-auto" />
-                        ) : (
-                          <div className="w-40 h-24 bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 border border-dashed border-gray-300">Không có ảnh</div>
-                        )}
-                        <button
-                          onClick={() => handleRemoveDraftItem(index)}
-                          className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover/img:opacity-100 transition-opacity"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="border-r border-black py-2 px-1">
-                      <CurrencyInput
-                        value={item.dealer_price}
-                        onChange={(val) => handleUpdateDraftItem(index, 'dealer_price', val)}
-                        className="w-full h-8 text-right font-bold tabular-nums focus:outline-none focus:bg-amber-50 border-none px-2"
-                      />
-                    </td>
-                    <td className="border-r border-black py-2 px-1">
-                      <CurrencyInput
-                        value={item.retail_price}
-                        onChange={(val) => handleUpdateDraftItem(index, 'retail_price', val)}
-                        className="w-full h-8 text-right font-bold tabular-nums focus:outline-none border-none px-2"
-                      />
-                    </td>
-                    <td className="border-r border-black py-2 px-1 bg-[#00AEEF]/10">
-                      <CurrencyInput
-                        value={item.public_price}
-                        onChange={(val) => handleUpdateDraftItem(index, 'public_price', val)}
-                        className="w-full h-8 text-right font-bold tabular-nums focus:outline-none bg-transparent border-none px-2 text-[#0071BC]"
-                      />
-                    </td>
-                    <td className="py-2 px-1">
-                      <input
-                        type="text"
-                        value={item.note}
-                        onChange={(e) => handleUpdateDraftItem(index, 'note', e.target.value)}
-                        placeholder="..."
-                        className="w-full h-8 text-[11px] focus:outline-none border-none px-2"
-                      />
-                    </td>
+                groupedDraftSections.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-20 text-gray-400 italic">Chưa có sản phẩm nào. Nhấn "Thêm TB" để bắt đầu.</td>
                   </tr>
-                ))
+                ) : (
+                  groupedDraftSections.map((section) => (
+                    <React.Fragment key={section.id ?? 'ungrouped'}>
+                      <tr className="bg-[#E6E7E8] border-b border-black">
+                        <td colSpan={7} className="py-1 px-3 font-bold italic uppercase">{section.name}</td>
+                      </tr>
+                      {section.items.map((item) => {
+                        const originalIndex = draftItems.findIndex((di) => di.product_id === item.product_id);
+                        return (
+                          <tr key={item.product_id} className="border-b border-black hover:bg-gray-50 transition-colors group">
+                            <td className="border-r border-black py-4 px-1 text-center font-semibold">{originalIndex + 1}</td>
+                            <td className="border-r border-black py-4 px-3 align-top">
+                              <div className="font-bold text-[14px] leading-snug">{item.product_name}</div>
+                              <div className="text-[11px] mt-1.5 whitespace-pre-wrap text-gray-700 leading-normal">
+                                - Loại: {item.product_unit || 'TB'}<br/>
+                                - SKU: {item.product_sku}
+                              </div>
+                            </td>
+                            <td className="border-r border-black py-2 px-2 text-center">
+                              <div className="relative group/img inline-block">
+                                {item.product_image ? (
+                                  <img src={item.product_image} alt="" className="max-h-32 max-w-full object-contain mx-auto" />
+                                ) : (
+                                  <div className="w-40 h-24 bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 border border-dashed border-gray-300">Không có ảnh</div>
+                                )}
+                                <button
+                                  onClick={() => handleRemoveDraftItem(originalIndex)}
+                                  className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="border-r border-black py-2 px-1">
+                              <CurrencyInput
+                                value={item.dealer_price}
+                                onChange={(val) => handleUpdateDraftItem(originalIndex, 'dealer_price', val)}
+                                className="w-full h-8 text-right font-bold tabular-nums focus:outline-none focus:bg-amber-50 border-none px-2"
+                              />
+                            </td>
+                            <td className="border-r border-black py-2 px-1">
+                              <CurrencyInput
+                                value={item.retail_price}
+                                onChange={(val) => handleUpdateDraftItem(originalIndex, 'retail_price', val)}
+                                className="w-full h-8 text-right font-bold tabular-nums focus:outline-none border-none px-2"
+                              />
+                            </td>
+                            <td className="border-r border-black py-2 px-1 bg-[#00AEEF]/10">
+                              <CurrencyInput
+                                value={item.public_price}
+                                onChange={(val) => handleUpdateDraftItem(originalIndex, 'public_price', val)}
+                                className="w-full h-8 text-right font-bold tabular-nums focus:outline-none bg-transparent border-none px-2 text-[#0071BC]"
+                              />
+                            </td>
+                            <td className="py-2 px-1">
+                              <input
+                                type="text"
+                                value={item.note}
+                                onChange={(e) => handleUpdateDraftItem(originalIndex, 'note', e.target.value)}
+                                placeholder="..."
+                                className="w-full h-8 text-[11px] focus:outline-none border-none px-2"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))
+                )
               ) : (
-                displayItems.map((item, index) => (
-                  <tr key={item.id} className="border-b border-black hover:bg-gray-50 transition-colors">
-                    <td className="border-r border-black py-6 px-1 text-center font-semibold align-middle">{index + 1}</td>
-                    <td className="border-r border-black py-6 px-4 align-top max-w-[240px]">
-                      <div className="font-bold text-[14px] leading-tight mb-2">{item.product_name_snapshot}</div>
-                      <div className="text-[11px] text-gray-800 leading-normal">
-                        - SKU: {item.product_sku_snapshot}<br/>
-                        - ĐVT: {item.product_unit_snapshot}
-                      </div>
-                    </td>
-                    <td className="border-r border-black py-3 px-3 text-center align-middle">
-                      {item.product_image_snapshot ? (
-                        <img src={item.product_image_snapshot} alt="" className="max-h-40 max-w-full object-contain mx-auto" />
-                      ) : (
-                        <div className="w-32 h-20 bg-gray-100 flex items-center justify-center mx-auto rounded border border-dashed border-gray-300">N/A</div>
-                      )}
-                    </td>
-                    <td className={`border-r border-black py-3 px-4 text-right font-bold tabular-nums align-middle text-[14px] ${item.is_changed ? 'bg-[#FFD700]' : ''}`}>
-                      {formatCurrency(item.dealer_price)}
-                    </td>
-                    <td className="border-r border-black py-3 px-4 text-right font-bold tabular-nums align-middle text-[14px]">
-                      {formatCurrency(item.retail_price)}
-                    </td>
-                    <td className="border-r border-black py-3 px-4 text-right font-bold tabular-nums align-middle text-[15px] bg-[#00AEEF] text-black">
-                      {formatCurrency(item.public_price)}
-                    </td>
-                    <td className={`py-3 px-3 text-center align-middle text-[12px] font-bold ${item.is_new ? 'text-[#F7941D]' : 'text-gray-700'}`}>
-                      {item.is_new ? 'Sản phẩm mới' : (item.note || '-')}
-                    </td>
-                  </tr>
-                ))
-              )}
-
-              {displayItems.length === 0 && !isBuilding && (
-                <tr>
-                  <td colSpan={7} className="text-center py-20 text-gray-400 italic">Chưa có dữ liệu sản phẩm trong bảng giá này</td>
-                </tr>
+                <>
+                  {groupedSections.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-20 text-gray-400 italic">Chưa có dữ liệu sản phẩm trong bảng giá này</td>
+                    </tr>
+                  ) : (
+                    groupedSections.map((section, sectionIdx) => {
+                      let globalIndex = 0;
+                      for (let i = 0; i < sectionIdx; i++) {
+                        globalIndex += groupedSections[i].items.length;
+                      }
+                      return (
+                        <React.Fragment key={section.id ?? 'ungrouped'}>
+                          <tr className="bg-[#E6E7E8] border-b border-black">
+                            <td colSpan={7} className="py-1 px-3 font-bold italic uppercase">{section.name}</td>
+                          </tr>
+                          {section.items.map((item) => {
+                            globalIndex++;
+                            return (
+                              <tr key={item.id} className="border-b border-black hover:bg-gray-50 transition-colors">
+                                <td className="border-r border-black py-6 px-1 text-center font-semibold align-middle">{globalIndex}</td>
+                                <td className="border-r border-black py-6 px-4 align-top max-w-[240px]">
+                                  <div className="font-bold text-[14px] leading-tight mb-2">{item.product_name_snapshot}</div>
+                                  <div className="text-[11px] text-gray-800 leading-normal">
+                                    - SKU: {item.product_sku_snapshot}<br/>
+                                    - ĐVT: {item.product_unit_snapshot}
+                                  </div>
+                                </td>
+                                <td className="border-r border-black py-3 px-3 text-center align-middle">
+                                  {item.product_image_snapshot ? (
+                                    <img src={item.product_image_snapshot} alt="" className="max-h-40 max-w-full object-contain mx-auto" />
+                                  ) : (
+                                    <div className="w-32 h-20 bg-gray-100 flex items-center justify-center mx-auto rounded border border-dashed border-gray-300">N/A</div>
+                                  )}
+                                </td>
+                                <td className={`border-r border-black py-3 px-4 text-right font-bold tabular-nums align-middle text-[14px] ${item.is_changed ? 'bg-[#FFD700]' : ''}`}>
+                                  {formatCurrency(item.dealer_price)}
+                                </td>
+                                <td className="border-r border-black py-3 px-4 text-right font-bold tabular-nums align-middle text-[14px]">
+                                  {formatCurrency(item.retail_price)}
+                                </td>
+                                <td className="border-r border-black py-3 px-4 text-right font-bold tabular-nums align-middle text-[15px] bg-[#00AEEF] text-black">
+                                  {formatCurrency(item.public_price)}
+                                </td>
+                                <td className={`py-3 px-3 text-center align-middle text-[12px] font-bold ${item.is_new ? 'text-[#F7941D]' : 'text-gray-700'}`}>
+                                  {item.is_new ? 'Sản phẩm mới' : (item.note || '-')}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -532,11 +793,18 @@ export default function PriceListDetailPage() {
       {/* Version History Footer */}
       {detail.versions.length > 0 && (
         <div className="bg-card border rounded-lg overflow-hidden mt-6">
-          <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
-            <History className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-[13px] font-medium">Lịch sử các phiên bản</h2>
-          </div>
-          <div className="divide-y">
+          <button
+            onClick={() => setShowVersionHistory(!showVersionHistory)}
+            className="w-full flex items-center justify-between px-4 py-3 border-b bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-muted-foreground" />
+              <h2 className="text-[13px] font-medium">Lịch sử các phiên bản ({detail.versions.length})</h2>
+            </div>
+            {showVersionHistory ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          {showVersionHistory && (
+            <div className="divide-y">
             {detail.versions.map((v: PriceListVersion) => {
               const isSelected = v.id === activeVersionId;
               return (
@@ -591,6 +859,7 @@ export default function PriceListDetailPage() {
               </div>
             );})}
           </div>
+          )}
         </div>
       )}
 
@@ -692,6 +961,7 @@ interface DraftItem {
   product_sku: string;
   product_image: string | null;
   product_unit: string | null;
+  product_group_id: string | null;
   dealer_price: number;
   retail_price: number;
   public_price: number;

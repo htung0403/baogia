@@ -6,6 +6,8 @@ import {
   updateProduct,
   deleteProduct,
   restoreProduct,
+  listProductGroupPrices,
+  updateProductGroupPrices,
 } from '../controllers/product.controller.js';
 import { authenticate, requireAdminOrStaff } from '../middleware/index.js';
 
@@ -23,5 +25,7 @@ router.post('/', requireAdminOrStaff, createProduct);
 router.put('/:id', requireAdminOrStaff, updateProduct);
 router.delete('/:id', requireAdminOrStaff, deleteProduct);
 router.post('/:id/restore', requireAdminOrStaff, restoreProduct);
+router.get('/:id/group-prices', listProductGroupPrices);
+router.put('/:id/group-prices', requireAdminOrStaff, updateProductGroupPrices);
 
 export default router;

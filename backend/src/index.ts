@@ -19,6 +19,8 @@ import profileRoutes from './routes/profile.routes.js';
 import pipelineRoutes from './routes/pipeline.routes.js';
 import customerGroupRoutes from './routes/customer-groups.routes.js';
 import careScheduleRoutes from './routes/care-schedule.routes.js';
+import brandRoutes from './routes/brand.routes.js';
+import productGroupRoutes from './routes/product-group.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/index.js';
 
 const app = express();
@@ -46,10 +48,14 @@ app.use(express.urlencoded({ extended: true }));
 // Gzip/brotli compression
 app.use(compression());
 
-// Cache headers cho GET API
+// Cache headers cho GET API (skip for customers/pipeline to avoid stale data after creation)
 app.use('/api/', (req, res, next) => {
-  if (req.method === 'GET') {
+  if (req.method === 'GET' && !req.url.includes('/customers') && !req.url.includes('/pipeline')) {
     res.setHeader('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=59');
+  } else if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
   }
   next();
 });
@@ -102,6 +108,8 @@ app.use('/api/profiles', profileRoutes);
 app.use('/api/pipeline', pipelineRoutes);
 app.use('/api/customer-groups', customerGroupRoutes);
 app.use('/api/care-schedule', careScheduleRoutes);
+app.use('/api/brands', brandRoutes);
+app.use('/api/product-groups', productGroupRoutes);
 
 // ============================================================
 // ERROR HANDLING

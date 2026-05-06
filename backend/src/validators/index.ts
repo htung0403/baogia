@@ -25,9 +25,14 @@ export const updateProfileSchema = z.object({
 // PRODUCTS
 // ============================================================
 export const createProductSchema = z.object({
-  sku: z.string().min(1, 'SKU không được trống'),
+  sku: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().min(1, 'SKU không được trống').optional()
+  ),
   name: z.string().min(1, 'Tên sản phẩm không được trống'),
   category_id: z.string().uuid().nullable().optional(),
+  brand_id: z.string().uuid().nullable().optional(),
+  product_group_id: z.string().uuid().nullable().optional(),
   description: z.string().nullable().optional(),
   specs: z.record(z.unknown()).default({}),
   image_urls: z.array(z.string()).default([]),
@@ -39,6 +44,15 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = createProductSchema.partial();
 
+export const productGroupPriceSchema = z.object({
+  customer_group_id: z.string().uuid('ID nhóm khách hàng không hợp lệ'),
+  price: z.number().min(0, 'Giá phải >= 0'),
+});
+
+export const updateProductGroupPricesSchema = z.object({
+  prices: z.array(productGroupPriceSchema),
+});
+
 // ============================================================
 // CUSTOMERS
 // ============================================================
@@ -49,6 +63,7 @@ export const createCustomerSchema = z.object({
   address: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
+  source: z.string().nullable().optional(),
   tax_code: z.string().nullable().optional(),
   industry: z.string().nullable().optional(),
   customer_group: z.string().nullable().optional(),
@@ -102,7 +117,28 @@ export const updateCustomerGroupSchema = createCustomerGroupSchema.partial();
 export const createPriceListSchema = z.object({
   title: z.string().min(1, 'Tiêu đề không được trống'),
   description: z.string().nullable().optional(),
+  company_name: z.string().nullable().optional(),
+  company_address: z.string().nullable().optional(),
+  sales_person: z.string().nullable().optional(),
+  sales_phone: z.string().nullable().optional(),
+  notice_text: z.string().nullable().optional(),
+  legend_blue_text: z.string().nullable().optional(),
+  legend_yellow_text: z.string().nullable().optional(),
+  legend_orange_text: z.string().nullable().optional(),
   customer_ids: z.array(z.string().uuid()).default([]),
+});
+
+export const updatePriceListSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  company_name: z.string().nullable().optional(),
+  company_address: z.string().nullable().optional(),
+  sales_person: z.string().nullable().optional(),
+  sales_phone: z.string().nullable().optional(),
+  notice_text: z.string().nullable().optional(),
+  legend_blue_text: z.string().nullable().optional(),
+  legend_yellow_text: z.string().nullable().optional(),
+  legend_orange_text: z.string().nullable().optional(),
 });
 
 export const createVersionSchema = z.object({
@@ -156,6 +192,32 @@ export const createCategorySchema = z.object({
 export const updateCategorySchema = createCategorySchema.partial();
 
 // ============================================================
+// BRANDS
+// ============================================================
+export const createBrandSchema = z.object({
+  name: z.string().min(1, 'Tên thương hiệu không được trống'),
+  slug: z.string().min(1, 'Slug không được trống'),
+  description: z.string().nullable().optional(),
+  logo_url: z.string().nullable().optional(),
+  is_active: z.boolean().default(true),
+  sort_order: z.number().int().default(0),
+});
+
+export const updateBrandSchema = createBrandSchema.partial();
+
+// ============================================================
+// PRODUCT GROUPS
+// ============================================================
+export const createProductGroupSchema = z.object({
+  name: z.string().min(1, 'Tên nhóm hàng không được trống'),
+  slug: z.string().min(1, 'Slug không được trống'),
+  description: z.string().nullable().optional(),
+  sort_order: z.number().int().default(0),
+});
+
+export const updateProductGroupSchema = createProductGroupSchema.partial();
+
+// ============================================================
 // Type exports
 // ============================================================
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -163,9 +225,12 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+export type ProductGroupPriceInput = z.infer<typeof productGroupPriceSchema>;
+export type UpdateProductGroupPricesInput = z.infer<typeof updateProductGroupPricesSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CreatePriceListInput = z.infer<typeof createPriceListSchema>;
+export type UpdatePriceListInput = z.infer<typeof updatePriceListSchema>;
 export type CreateVersionInput = z.infer<typeof createVersionSchema>;
 export type AssignCustomersInput = z.infer<typeof assignCustomersSchema>;
 export type StartSessionInput = z.infer<typeof startSessionSchema>;
@@ -222,7 +287,7 @@ export const assignStageSchema = z.object({
 
 // Funnel query params
 export const funnelQuerySchema = z.object({
-  assigned_to: z.string().uuid().optional(),
+  assigned_to: z.string().uuid().nullable().optional(),
   period: z.enum(['this_month', 'last_month', 'all']).default('this_month'),
   all_kh: z.string().optional().transform(v => v === 'true'),
 });

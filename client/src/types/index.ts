@@ -66,11 +66,35 @@ export interface ProductCategory {
   parent_id: string | null;
 }
 
+export interface Brand {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo_url: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductGroup {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Product {
   id: string;
   sku: string;
   name: string;
   category_id: string | null;
+  brand_id: string | null;
+  product_group_id: string | null;
   description: string | null;
   specs: Record<string, unknown>;
   image_urls: string[];
@@ -82,12 +106,33 @@ export interface Product {
   updated_at: string;
   deleted_at: string | null;
   product_categories?: { name: string; slug: string } | null;
+  brands?: { name: string; slug: string } | null;
+  product_groups?: { name: string; slug: string } | null;
+  group_prices?: ProductGroupPrice[];
+}
+
+export interface ProductGroupPrice {
+  id: string;
+  product_id: string;
+  customer_group_id: string;
+  price: number;
+  created_at: string;
+  updated_at: string;
+  customer_groups?: { name: string; code: string | null } | null;
 }
 
 export interface PriceList {
   id: string;
   title: string;
   description: string | null;
+  company_name?: string | null;
+  company_address?: string | null;
+  sales_person?: string | null;
+  sales_phone?: string | null;
+  notice_text?: string | null;
+  legend_blue_text?: string | null;
+  legend_yellow_text?: string | null;
+  legend_orange_text?: string | null;
   status: PriceListStatus;
   created_by: string;
   created_at: string;
@@ -117,6 +162,7 @@ export interface PriceListItem {
   product_specs_snapshot: Record<string, unknown>;
   product_image_snapshot: string | null;
   product_unit_snapshot: string | null;
+  product_group_id: string | null;
   dealer_price: number | null;
   retail_price: number | null;
   public_price: number | null;

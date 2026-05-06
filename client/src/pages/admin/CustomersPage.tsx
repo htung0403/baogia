@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { customerApi, profilesApi, pipelineApi, orderApi, customerGroupApi } from '@/api/client';
 import { formatDate } from '@/lib/utils';
 import type { Customer, BoardResponse, FunnelResponse, StaffProfile, CustomerCost, Order } from '@/types';
+import * as XLSX from 'xlsx';
 import PipelineSettingsModal from './PipelineSettingsModal';
 import CustomerSlideOver from '@/components/customers/CustomerSlideOver';
 import { useToast } from '@/components/ui/toast';
@@ -20,6 +21,8 @@ import {
   Building2,
   Filter,
   Download,
+  Upload,
+  Loader2,
   MessageSquare,
   DollarSign,
   AlertTriangle,
@@ -52,6 +55,30 @@ const BG_COLOR: Record<string, string> = {
   teal: 'bg-teal-50', amber: 'bg-amber-50', red: 'bg-red-50',
   yellow: 'bg-yellow-50', slate: 'bg-slate-50', emerald: 'bg-emerald-50',
 };
+const STAGE_BG_COLOR: Record<string, string> = {
+  blue: 'bg-blue-600', indigo: 'bg-indigo-600', green: 'bg-green-600',
+  cyan: 'bg-cyan-600', orange: 'bg-orange-500', purple: 'bg-purple-600',
+  teal: 'bg-teal-600', amber: 'bg-amber-400', red: 'bg-red-600',
+  yellow: 'bg-yellow-400', slate: 'bg-slate-500', emerald: 'bg-emerald-600',
+};
+const STAGE_TEXT_COLOR: Record<string, string> = {
+  blue: 'text-white', indigo: 'text-white', green: 'text-white',
+  cyan: 'text-white', orange: 'text-white', purple: 'text-white',
+  teal: 'text-white', amber: 'text-amber-900', red: 'text-white',
+  yellow: 'text-yellow-900', slate: 'text-white', emerald: 'text-white',
+};
+const TEXT_COLOR: Record<string, string> = {
+  blue: 'text-blue-700', indigo: 'text-indigo-700', green: 'text-green-700',
+  cyan: 'text-cyan-700', orange: 'text-orange-700', purple: 'text-purple-700',
+  teal: 'text-teal-700', amber: 'text-amber-700', red: 'text-red-700',
+  yellow: 'text-yellow-700', slate: 'text-slate-700', emerald: 'text-emerald-700',
+};
+const BORDER_LIGHT_COLOR: Record<string, string> = {
+  blue: 'border-blue-200', indigo: 'border-indigo-200', green: 'border-green-200',
+  cyan: 'border-cyan-200', orange: 'border-orange-200', purple: 'border-purple-200',
+  teal: 'border-teal-200', amber: 'border-amber-200', red: 'border-red-200',
+  yellow: 'border-yellow-200', slate: 'border-slate-200', emerald: 'border-emerald-200',
+};
 
 // ============================================================
 // Main Page
@@ -63,6 +90,8 @@ export default function CustomersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const [activeTab, setActiveTab] = useState<'list' | 'journey' | 'conversion' | 'reports' | 'stats'>('list');
   const [page, setPage] = useState(1);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isImporting, setIsImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
@@ -120,7 +149,7 @@ export default function CustomersPage() {
   const groupList: Array<{ id: string; name: string }> = groupsRes?.data?.data ?? [];
 
   // Customer list query (only runs when on Tab 1)
-  const { data: res, isLoading } = useQuery({
+  const { data: res, isLoading, refetch } = useQuery({
     queryKey: ['customers-list-all'],
     queryFn: () => customerApi.list({
       page: 1,
@@ -152,13 +181,13 @@ export default function CustomersPage() {
   }, [board.columns]);
 
   const stageOptions = useMemo(() => {
-    const options: Array<{ id: string; name: string }> = [];
+    const options: Array<{ id: string; name: string; color: string; count: number }> = [];
     for (const col of board.columns ?? []) {
       for (const stage of col.stages ?? []) {
-        options.push({ id: stage.id, name: stage.name });
+        options.push({ id: stage.id, name: stage.name, color: stage.color, count: stage.count ?? 0 });
       }
     }
-    return options;
+    return options.sort((a, b) => b.count - a.count);
   }, [board.columns]);
 
   const now = new Date();
@@ -357,6 +386,141 @@ export default function CustomersPage() {
     setCustomerToDelete({ id, name });
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExportExcel = () => {
+    const data = customers.map((c, i) => ({
+      STT: i + 1,
+      'Tên khách hàng': c.customer_name || '',
+      'Số điện thoại': c.phone_number || '',
+      Email: c.email || '',
+      'Địa chỉ': c.address || '',
+      'Người phụ trách': c.assigned_profile?.display_name || '',
+      'Nhóm khách hàng': c.customer_groups?.name || '',
+      'Nguồn': c.source || '',
+      'Ghi chú': c.notes || '',
+      'Ngày tạo': c.created_at ? new Date(c.created_at).toLocaleDateString('vi-VN') : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Khách hàng');
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `customers_${today}.xlsx`);
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Guard: check if allCustomers is loaded
+    if (!allCustomers || allCustomers.length === 0) {
+      toast.info('Danh sách khách hàng chưa được tải. Vui lòng đợi hoặc refresh trang.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setIsImporting(true);
+      const data = evt.target?.result;
+      const wb = XLSX.read(data, { type: 'binary' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet);
+
+      console.log('[handleImportExcel] Rows parsed:', rows.length);
+      console.log('[handleImportExcel] allCustomers loaded:', allCustomers.length);
+
+      const normalizePhone = (p: string) => p.replace(/\D/g, '');
+      const normalizeEmail = (e: string) => e.toLowerCase().trim();
+      const isValidPhone = (p: string) => {
+        const digits = normalizePhone(p);
+        return digits.length >= 7 && digits.length <= 15 && /^\d+$/.test(digits);
+      };
+
+      let created = 0;
+      let skippedDuplicate = 0;
+      let skippedInvalid = 0;
+      let skippedError = 0;
+      const invalidRows: string[] = [];
+
+      for (const row of rows) {
+        const name = (row['Tên khách hàng'] || row['customer_name'] || '').toString().trim();
+        const phone = (row['Số điện thoại'] || row['phone_number'] || '').toString().trim();
+        const email = (row['Email'] || row['email'] || '').toString().trim();
+
+        if (!name) {
+          skippedInvalid++;
+          continue;
+        }
+
+        if (phone && !isValidPhone(phone)) {
+          skippedInvalid++;
+          invalidRows.push(`"${name}" (SĐT: "${phone}")`);
+          continue;
+        }
+
+        console.log('[handleImportExcel] Checking row - name:', name, 'phone:', phone, 'email:', email);
+
+        const phoneNorm = normalizePhone(phone);
+        const emailNorm = normalizeEmail(email);
+
+        const isDuplicate = allCustomers.some((c) => {
+          const existingPhone = normalizePhone(c.phone_number || '');
+          const existingEmail = normalizeEmail(c.email || '');
+          return (phoneNorm && existingPhone === phoneNorm) || (emailNorm && existingEmail === emailNorm);
+        });
+
+        if (isDuplicate) {
+          skippedDuplicate++;
+          continue;
+        }
+
+        try {
+          await customerApi.create({
+            customer_name: name,
+            phone_number: phone || null,
+            email: email || null,
+            address: (row['Địa chỉ'] || row['address'] || '').toString().trim() || null,
+            notes: (row['Ghi chú'] || row['notes'] || '').toString().trim() || null,
+            source: (row['Nguồn'] || row['source'] || '').toString().trim() || null,
+          });
+          created++;
+        } catch (err: any) {
+          skippedError++;
+          console.error('[handleImportExcel] API error for', name, err?.response?.data);
+        }
+      }
+
+      const parts: string[] = [];
+      if (created > 0) parts.push(`${created} khách hàng mới`);
+      if (skippedDuplicate > 0) parts.push(`${skippedDuplicate} trùng lặp`);
+      if (skippedInvalid > 0) parts.push(`${skippedInvalid} SĐT không hợp lệ`);
+      if (skippedError > 0) parts.push(`${skippedError} lỗi API`);
+
+      if (parts.length === 0) {
+        toast.info('Không có dữ liệu nào được nhập');
+      } else if (skippedInvalid > 0 || skippedError > 0) {
+        toast.info('Kết quả: ' + parts.join(', '));
+        if (invalidRows.length > 0) {
+          console.warn('[handleImportExcel] Invalid rows:', invalidRows);
+        }
+      } else {
+        toast.success(`Đã nhập ${parts.join(', ')}`);
+      }
+      queryClient.removeQueries({ queryKey: ['customers-list-all'] });
+      setTimeout(async () => {
+        await refetch();
+      await queryClient.invalidateQueries({ queryKey: ['customers-all'] });
+      await queryClient.invalidateQueries({ queryKey: ['customer-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+        setPage(1);
+        setRefreshKey(prev => prev + 1);
+        setIsImporting(false);
+      }, 500);
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">Khách hàng</h1>
@@ -381,7 +545,7 @@ export default function CustomersPage() {
 
       {/* Tab 1: Customer List */}
       {activeTab === 'list' && (
-        <div className="space-y-4">
+        <div className="space-y-4" key={refreshKey}>
           <p className="text-[14px] text-slate-500 mt-1">Quản lý danh sách khách hàng ({customers.length})</p>
 
           {/* Filter bar */}
@@ -667,6 +831,25 @@ export default function CustomersPage() {
                 </button>
               )}
               <button
+                onClick={handleExportExcel}
+                className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm shadow-emerald-200 transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Xuất Excel
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-700 shadow-sm shadow-amber-200 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isImporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                {isImporting ? 'Đang xử lý...' : 'Nhập Excel'}
+              </button>
+              <button
                 onClick={() => { setEditingCustomer(null); setShowForm(true); }}
                 className="inline-flex items-center gap-2 h-9 px-4 text-[13px] font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all cursor-pointer"
               >
@@ -675,6 +858,49 @@ export default function CustomersPage() {
               </button>
             </div>
           </div>
+
+          {stageOptions.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+              <button
+                onClick={() => { setStageFilter([]); setPage(1); }}
+                className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold border rounded-lg transition-all cursor-pointer shrink-0 ${
+                  stageFilter.length === 0
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                Tất cả
+                <span className={`inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-bold rounded-full ${stageFilter.length === 0 ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                  {board.total_customers ?? allCustomers.length}
+                </span>
+              </button>
+
+              {stageOptions.map((stage) => {
+                const isSelected = stageFilter.includes(stage.id);
+                const bgClass = STAGE_BG_COLOR[stage.color] || 'bg-slate-500';
+                const textClass = STAGE_TEXT_COLOR[stage.color] || 'text-white';
+                const bgLight = BG_COLOR[stage.color] || 'bg-slate-50';
+                const textClr = TEXT_COLOR[stage.color] || 'text-slate-600';
+                const borderLight = BORDER_LIGHT_COLOR[stage.color] || 'border-slate-200';
+                return (
+                  <button
+                    key={stage.id}
+                    onClick={() => toggleMultiFilter(stage.id, stageFilter, setStageFilter)}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold border rounded-lg transition-all cursor-pointer shrink-0 ${
+                      isSelected
+                        ? `${bgClass} ${textClass} border-transparent`
+                        : `${bgLight} ${textClr} ${borderLight} hover:brightness-95`
+                    }`}
+                  >
+                    {stage.name}
+                    <span className={`inline-flex items-center justify-center px-1.5 h-4 text-[10px] font-bold rounded-full ${isSelected ? 'bg-white/30 text-current' : 'bg-white/70 text-current'}`}>
+                      {stage.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Table */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -984,6 +1210,14 @@ export default function CustomersPage() {
         </div>,
         document.body
       )}
+
+      <input
+        type="file"
+        accept=".xlsx,.xls"
+        ref={fileInputRef}
+        onChange={handleImportExcel}
+        className="hidden"
+      />
     </div>
   );
 }

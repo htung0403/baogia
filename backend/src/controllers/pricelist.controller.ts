@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../utils/supabase.js';
 import { ApiError, sendSuccess, sendCreated, parsePagination } from '../utils/index.js';
 import {
   createPriceListSchema,
+  updatePriceListSchema,
   createVersionSchema,
   assignCustomersSchema,
 } from '../validators/index.js';
@@ -220,6 +221,14 @@ export async function createPriceList(req: Request, res: Response, next: NextFun
       .insert({
         title: input.title,
         description: input.description ?? null,
+        company_name: input.company_name ?? null,
+        company_address: input.company_address ?? null,
+        sales_person: input.sales_person ?? null,
+        sales_phone: input.sales_phone ?? null,
+        notice_text: input.notice_text ?? null,
+        legend_blue_text: input.legend_blue_text ?? null,
+        legend_yellow_text: input.legend_yellow_text ?? null,
+        legend_orange_text: input.legend_orange_text ?? null,
         status: 'draft',
         created_by: user.id,
       })
@@ -268,7 +277,7 @@ export async function updatePriceList(req: Request, res: Response, next: NextFun
   try {
     const user = (req as AuthenticatedRequest).user;
     const { id } = req.params;
-    const { title, description } = req.body;
+    const input = updatePriceListSchema.parse(req.body);
 
     const { data: oldData } = await supabaseAdmin
       .from('price_lists')
@@ -280,8 +289,16 @@ export async function updatePriceList(req: Request, res: Response, next: NextFun
     if (!oldData) throw ApiError.notFound('Bảng giá không tồn tại');
 
     const updateFields: Record<string, unknown> = {};
-    if (title !== undefined) updateFields.title = title;
-    if (description !== undefined) updateFields.description = description;
+    if (input.title !== undefined) updateFields.title = input.title;
+    if (input.description !== undefined) updateFields.description = input.description;
+    if (input.company_name !== undefined) updateFields.company_name = input.company_name;
+    if (input.company_address !== undefined) updateFields.company_address = input.company_address;
+    if (input.sales_person !== undefined) updateFields.sales_person = input.sales_person;
+    if (input.sales_phone !== undefined) updateFields.sales_phone = input.sales_phone;
+    if (input.notice_text !== undefined) updateFields.notice_text = input.notice_text;
+    if (input.legend_blue_text !== undefined) updateFields.legend_blue_text = input.legend_blue_text;
+    if (input.legend_yellow_text !== undefined) updateFields.legend_yellow_text = input.legend_yellow_text;
+    if (input.legend_orange_text !== undefined) updateFields.legend_orange_text = input.legend_orange_text;
 
     const { data, error } = await supabaseAdmin
       .from('price_lists')
@@ -408,7 +425,7 @@ export async function createVersion(req: Request, res: Response, next: NextFunct
       const chunk = productIds.slice(i, i + CHUNK_SIZE);
       const { data: chunkProducts, error: chunkError } = await supabaseAdmin
         .from('products')
-        .select('id, name, sku, specs, image_urls, unit')
+        .select('id, name, sku, specs, image_urls, unit, product_group_id')
         .in('id', chunk);
         
       if (chunkError) throw ApiError.internal(chunkError.message);
@@ -439,6 +456,7 @@ export async function createVersion(req: Request, res: Response, next: NextFunct
         product_specs_snapshot: product.specs,
         product_image_snapshot: product.image_urls?.[0] ?? null,
         product_unit_snapshot: product.unit,
+        product_group_id: product.product_group_id ?? null,
         // Pricing
         dealer_price: item.dealer_price ?? null,
         retail_price: item.retail_price ?? null,
@@ -538,7 +556,7 @@ export async function updateVersion(req: Request, res: Response, next: NextFunct
       const chunk = productIds.slice(i, i + CHUNK_SIZE);
       const { data: chunkProducts, error: chunkError } = await supabaseAdmin
         .from('products')
-        .select('id, name, sku, specs, image_urls, unit')
+        .select('id, name, sku, specs, image_urls, unit, product_group_id')
         .in('id', chunk);
       if (chunkError) throw ApiError.internal(chunkError.message);
       if (chunkProducts) products.push(...chunkProducts);
@@ -562,6 +580,7 @@ export async function updateVersion(req: Request, res: Response, next: NextFunct
         product_specs_snapshot: product.specs,
         product_image_snapshot: product.image_urls?.[0] ?? null,
         product_unit_snapshot: product.unit,
+        product_group_id: product.product_group_id ?? null,
         dealer_price: item.dealer_price ?? null,
         retail_price: item.retail_price ?? null,
         public_price: item.public_price ?? null,

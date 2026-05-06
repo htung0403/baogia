@@ -109,6 +109,12 @@ export const productApi = {
 
   restore: (id: string) =>
     api.post(`/products/${id}/restore`),
+
+  listGroupPrices: (id: string) =>
+    api.get(`/products/${id}/group-prices`),
+
+  updateGroupPrices: (id: string, data: { prices: Array<{ customer_group_id: string; price: number }> }) =>
+    api.put(`/products/${id}/group-prices`, data),
 };
 
 // --- Customers ---
@@ -146,7 +152,18 @@ export const priceListApi = {
   create: (data: { title: string; description?: string; customer_ids?: string[] }) =>
     api.post('/price-lists', data),
 
-  update: (id: string, data: { title?: string; description?: string }) =>
+  update: (id: string, data: {
+    title?: string;
+    description?: string | null;
+    company_name?: string | null;
+    company_address?: string | null;
+    sales_person?: string | null;
+    sales_phone?: string | null;
+    notice_text?: string | null;
+    legend_blue_text?: string | null;
+    legend_yellow_text?: string | null;
+    legend_orange_text?: string | null;
+  }) =>
     api.put(`/price-lists/${id}`, data),
 
   delete: (id: string) =>
@@ -463,6 +480,42 @@ export const customerGroupApi = {
 
   delete: (id: string) =>
     api.delete(`/customer-groups/${id}`),
+};
+
+// --- Brands ---
+export const brandApi = {
+  list: () =>
+    api.get('/brands'),
+
+  get: (id: string) =>
+    api.get(`/brands/${id}`),
+
+  create: (data: { name: string; slug: string; description?: string | null; logo_url?: string | null; is_active?: boolean; sort_order?: number }) =>
+    api.post('/brands', data),
+
+  update: (id: string, data: { name?: string; slug?: string; description?: string | null; logo_url?: string | null; is_active?: boolean; sort_order?: number }) =>
+    api.put(`/brands/${id}`, data),
+
+  delete: (id: string) =>
+    api.delete(`/brands/${id}`),
+};
+
+// --- Product Groups ---
+export const productGroupApi = {
+  list: () =>
+    api.get('/product-groups'),
+
+  get: (id: string) =>
+    api.get(`/product-groups/${id}`),
+
+  create: (data: { name: string; slug: string; description?: string | null; sort_order?: number }) =>
+    api.post('/product-groups', data),
+
+  update: (id: string, data: { name?: string; slug?: string; description?: string | null; sort_order?: number }) =>
+    api.put(`/product-groups/${id}`, data),
+
+  delete: (id: string) =>
+    api.delete(`/product-groups/${id}`),
 };
 
 // --- Care Schedule ---

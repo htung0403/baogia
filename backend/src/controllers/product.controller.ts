@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../utils/supabase.js';
 import { ApiError, sendSuccess, sendCreated, parsePagination } from '../utils/index.js';
-import { createProductSchema, updateProductSchema } from '../validators/index.js';
+import { createProductSchema, updateProductSchema, updateProductGroupPricesSchema } from '../validators/index.js';
 import { AuthenticatedRequest } from '../types/api.js';
 import { AuditService } from '../services/audit.service.js';
 
@@ -19,7 +19,7 @@ export async function listProducts(req: Request, res: Response, next: NextFuncti
 
     let query = supabaseAdmin
       .from('products')
-      .select('*, product_categories(name, slug)', { count: 'exact' });
+      .select('*, product_categories(name, slug), brands(name, slug), product_groups(name, slug)', { count: 'exact' });
 
     // Soft delete filter (admin can see deleted)
     if (!include_deleted) {
@@ -72,7 +72,7 @@ export async function getProduct(req: Request, res: Response, next: NextFunction
 
     const { data, error } = await supabaseAdmin
       .from('products')
-      .select('*, product_categories(name, slug)')
+      .select('*, product_categories(name, slug), brands(name, slug), product_groups(name, slug)')
       .eq('id', id)
       .single();
 
@@ -84,6 +84,13 @@ export async function getProduct(req: Request, res: Response, next: NextFunction
   }
 }
 
+function generateSku(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `SP${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${random}`;
+}
+
 /**
  * POST /products
  * Create a new product (admin/staff only)
@@ -92,31 +99,43 @@ export async function createProduct(req: Request, res: Response, next: NextFunct
   try {
     const user = (req as AuthenticatedRequest).user;
     const input = createProductSchema.parse(req.body);
+    const sku = input.sku || generateSku();
 
     // Check SKU uniqueness
     const { data: existing } = await supabaseAdmin
       .from('products')
       .select('id')
-      .eq('sku', input.sku)
+      .eq('sku', sku)
       .is('deleted_at', null)
       .single();
 
     if (existing) {
-      throw ApiError.conflict(`SKU "${input.sku}" đã tồn tại`);
+      throw ApiError.conflict(`SKU "${sku}" đã tồn tại`);
     }
 
     const { data, error } = await supabaseAdmin
       .from('products')
       .insert({
         ...input,
+        sku,
         created_by: user.id,
       })
-      .select('*, product_categories(name, slug)')
+      .select('*, product_categories(name, slug), brands(name, slug), product_groups(name, slug)')
       .single();
 
     if (error) throw ApiError.internal(error.message);
 
-    // Audit log
+    const groupPrices = req.body.group_prices as Array<{ customer_group_id: string; price: number }> | undefined;
+    if (groupPrices && groupPrices.length > 0) {
+      await supabaseAdmin.from('product_group_prices').insert(
+        groupPrices.map((p) => ({
+          product_id: data.id,
+          customer_group_id: p.customer_group_id,
+          price: p.price,
+        }))
+      );
+    }
+
     await AuditService.log({
       actorId: user.id,
       action: 'create',
@@ -171,12 +190,25 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
       .from('products')
       .update(input)
       .eq('id', id)
-      .select('*, product_categories(name, slug)')
+      .select('*, product_categories(name, slug), brands(name, slug), product_groups(name, slug)')
       .single();
 
     if (error) throw ApiError.internal(error.message);
 
-    // Audit log
+    const groupPrices = req.body.group_prices as Array<{ customer_group_id: string; price: number }> | undefined;
+    if (groupPrices) {
+      await supabaseAdmin.from('product_group_prices').delete().eq('product_id', id);
+      if (groupPrices.length > 0) {
+        await supabaseAdmin.from('product_group_prices').insert(
+          groupPrices.map((p) => ({
+            product_id: id,
+            customer_group_id: p.customer_group_id,
+            price: p.price,
+          }))
+        );
+      }
+    }
+
     await AuditService.log({
       actorId: user.id,
       action: 'update',
@@ -250,7 +282,7 @@ export async function restoreProduct(req: Request, res: Response, next: NextFunc
       .update({ deleted_at: null })
       .eq('id', id)
       .not('deleted_at', 'is', null)
-      .select('*, product_categories(name, slug)')
+      .select('*, product_categories(name, slug), brands(name, slug), product_groups(name, slug)')
       .single();
 
     if (error || !data) throw ApiError.notFound('Sản phẩm không tồn tại hoặc chưa bị xóa');
@@ -265,6 +297,87 @@ export async function restoreProduct(req: Request, res: Response, next: NextFunc
     });
 
     sendSuccess(res, data, 'Khôi phục sản phẩm thành công');
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /products/:id/group-prices
+ * List group prices for a product
+ */
+export async function listProductGroupPrices(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabaseAdmin
+      .from('product_group_prices')
+      .select('*, customer_groups(name, code)')
+      .eq('product_id', id)
+      .order('created_at', { ascending: true });
+
+    if (error) throw ApiError.internal(error.message);
+
+    sendSuccess(res, data ?? []);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PUT /products/:id/group-prices
+ * Update group prices for a product (batch upsert)
+ */
+export async function updateProductGroupPrices(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    const { id } = req.params;
+    const input = updateProductGroupPricesSchema.parse(req.body);
+
+    const { data: product } = await supabaseAdmin
+      .from('products')
+      .select('id, name')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .single();
+
+    if (!product) throw ApiError.notFound('Sản phẩm không tồn tại');
+
+    await supabaseAdmin
+      .from('product_group_prices')
+      .delete()
+      .eq('product_id', id);
+
+    if (input.prices.length > 0) {
+      const { error: insertError } = await supabaseAdmin
+        .from('product_group_prices')
+        .insert(
+          input.prices.map((p) => ({
+            product_id: id,
+            customer_group_id: p.customer_group_id,
+            price: p.price,
+          }))
+        );
+
+      if (insertError) throw ApiError.internal(insertError.message);
+    }
+
+    await AuditService.log({
+      actorId: user.id,
+      action: 'update',
+      entityType: 'product',
+      entityId: id,
+      newData: { group_prices: input.prices },
+      ipAddress: req.ip,
+    });
+
+    const { data } = await supabaseAdmin
+      .from('product_group_prices')
+      .select('*, customer_groups(name, code)')
+      .eq('product_id', id)
+      .order('created_at', { ascending: true });
+
+    sendSuccess(res, data ?? [], 'Cập nhật giá nhóm thành công');
   } catch (error) {
     next(error);
   }

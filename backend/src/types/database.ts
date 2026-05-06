@@ -54,11 +54,35 @@ export interface ProductCategory {
   created_at: string;
 }
 
+export interface Brand {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo_url: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductGroup {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Product {
   id: string;
   sku: string;
   name: string;
   category_id: string | null;
+  brand_id: string | null;
+  product_group_id: string | null;
   description: string | null;
   specs: Record<string, unknown>;
   image_urls: string[];

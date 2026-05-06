@@ -171,7 +171,7 @@ export async function createCustomer(req: Request, res: Response, next: NextFunc
         facebook: input.facebook ?? null,
         tiktok_url: input.tiktok_url ?? null,
         characteristics: input.characteristics ?? null,
-        assigned_to: input.assigned_to ?? user.id,
+        assigned_to: input.assigned_to === undefined ? user.id : input.assigned_to,
         created_by: user.id,
       })
       .select('*')
